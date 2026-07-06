@@ -1,10 +1,9 @@
-# Documentation
-
 ## Overview
 
 Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
 
----
+[![Getting Started Video](https://img.youtube.com/vi/W9Q1IPLwY10/0.jpg)](https://www.youtube.com/watch?v=W9Q1IPLwY10)
+
 
 ## Getting Started
 
@@ -25,14 +24,6 @@ Lorem ipsum dolor sit amet, consectetur adipiscing elit. Donec a diam lectus. Se
 # Lorem ipsum install command
 npm install lorem-ipsum
 ```
-
----
-
-## Video Tutorial
-
-Watch the video below to get started:
-
-[![Getting Started Video](https://img.youtube.com/vi/W9Q1IPLwY10/0.jpg)](https://www.youtube.com/watch?v=W9Q1IPLwY10)
 
 ---
 
