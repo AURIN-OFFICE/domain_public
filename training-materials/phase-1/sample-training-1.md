@@ -1,5 +1,9 @@
 # Sample Training Material — Phase 1, Module 1
 
+[Jump to Introduction](#introduction)
+[Jump to Summary](#summary)
+[Jump to Markdown Feature Tests](#appendix-markdown-feature-tests)
+
 ## Introduction
 
 Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
@@ -30,3 +34,91 @@ Nullam vel sem. Pellentesque libero tortor, tincidunt et, tincidunt eget, semper
 ## Summary
 
 In hac habitasse platea dictumst. Vivamus vestibulum ntulla nec ante. Praesent dapibus, neque id cursus faucibus, tortor neque egestas augue, eu vulputate magna eros eu erat.
+
+---
+
+## Appendix: Markdown Feature Tests
+
+This section is a fixture for exercising markdown renderer/preview coverage — not part of the actual training content.
+
+### Text Formatting
+
+**Bold text**, *italic text*, ***bold italic***, ~~strikethrough~~, and `inline code`.
+
+### Lists
+
+**Unordered / nested:**
+
+- Item one
+  - Nested item
+    - Deeply nested item
+- Item two
+
+**Ordered / nested:**
+
+1. First step
+2. Second step
+   1. Sub-step
+   2. Sub-step
+
+**Task list:**
+
+- [x] Reviewed Section 1
+- [x] Reviewed Section 2
+- [ ] Completed knowledge check
+
+### Links and Images
+
+[Inline link](https://example.com "Example Title")
+
+Autolink: <https://example.com>
+
+![Placeholder diagram](https://via.placeholder.com/150 "Sample diagram")
+
+### Blockquotes
+
+> Single-level blockquote.
+>
+> > Nested blockquote.
+
+### Code Blocks
+
+Inline `const x = 1;` example.
+
+```js
+function greet(name) {
+  return `Hello, ${name}!`;
+}
+```
+
+```python
+def greet(name):
+    return f"Hello, {name}!"
+```
+
+### Tables
+
+| Feature      | Supported | Notes                |
+|--------------|:---------:|-----------------------|
+| Headers      | ✅        | H1–H6                 |
+| Tables       | ✅        | With alignment        |
+| Task lists   | ✅        | GFM extension         |
+
+### Horizontal Rule
+
+---
+
+### Footnotes
+
+Referenced claim here.[^1]
+
+[^1]: Footnote content for the referenced claim.
+
+### Raw HTML
+
+<div style="color: red;">This paragraph is raw embedded HTML.</div>
+
+### Line Breaks
+
+First line.  
+Second line, forced by two trailing spaces above.
