@@ -1,0 +1,659 @@
+---
+title: "Notebook 1: The Listings Endpoint"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+```
+
+## What this notebook covers
+
+The listings endpoint is one of the main data sources on the Domain API.
+It returns individual property records, one per property, with fields
+like address, price, listing date, property type, and number of
+bedrooms.
+
+This notebook teaches you:
+
+1.  How the listings endpoint works and how to structure a data access
+    request.
+2.  How to apply filters (listing type, property type, date range).
+3.  How to detect the total record count with a density probe.
+4.  How to retrieve all records page by page for areas with up to 1,000
+    listings.
+5.  How to save your results to a CSV file.
+
+For requests with more than 1,000 listings, a proper tutorial is
+provided in Notebook 3.
+
+**By the end** you will have a complete dataset for a Melbourne suburb
+stored in a table and saved as a CSV file.
+
+------------------------------------------------------------------------
+
+## Before You Start
+
+**If you have already completed Notebook 0**, your packages, `.env`
+file, and connection are already set up. Skip to the *Key Terms* section
+below.
+
+If this is your first exposure to Domain API, complete
+`notebook-0-getting-started.Rmd` before this notebook. It covers package
+installation, creating the `.env` credentials file, and making a test
+call to confirm your connection works.
+
+------------------------------------------------------------------------
+
+## Key Terms
+
+**API (Application Programming Interface):** A way for your computer to
+ask another computer for data over the internet. Think of it as placing
+a phone order at a restaurant rather than walking in.
+
+**Endpoint:** A specific address within an API that handles one type of
+request. This notebook uses the residential listings search endpoint.
+
+**Credit:** One unit of API usage. Every request costs 1 credit,
+regardless of how many records it returns. Your AURIN account has 1,000
+credits per month.
+
+**Record:** One row of data. In this notebook, one property listing.
+
+**POST request:** The request method used by the listings endpoint. You
+send a JSON body describing your search criteria, and the server
+responds with matching records.
+
+**Pagination:** When a large set of results is split across multiple
+pages. You request page 1, then page 2, and so on.
+
+**JSON:** A text format for storing structured data. The API sends
+responses and accepts requests in JSON format. In R, a JSON object
+arrives as a *named* list and a JSON array as an *unnamed* list.
+
+**Tibble:** A table of data in R, similar to an Excel spreadsheet. Rows
+are listings, columns are fields (suburb, price, date, and so on). It is
+the modern version of R's built-in `data.frame`.
+
+------------------------------------------------------------------------
+
+## The Listings Endpoint: What It Returns
+
+The endpoint address is:
+
+```         
+POST /v1/listings/residential/_search
+```
+
+You send it a JSON body describing your search criteria. It responds
+with a list of property records.
+
+**Key fields in each record:**
+
+| Field path | Description |
+|------------------------------------|------------------------------------|
+| `id` | Unique listing identifier |
+| `listingType` | `Sold` or `Rent` |
+| `dateListed` | Date the listing appeared on Domain |
+| `soldData.soldPrice` | Sale price (sold listings only) |
+| `propertyDetails.suburb` | Suburb name |
+| `propertyDetails.propertyType` | Property type (see note below) |
+| `propertyDetails.bedrooms` | Number of bedrooms |
+| `propertyDetails.latitude` | Latitude coordinate (used in Notebook 4 for spatial queries) |
+| `propertyDetails.longitude` | Longitude coordinate |
+
+> **Property types on this endpoint:** the listings endpoint returns a
+> wide range of values here, including `House`, `ApartmentUnitFlat`,
+> `Townhouse`, `Villa`, `Land`, `Rural`, and others. This is different
+> from the suburb statistics endpoint in Notebook 2, which only accepts
+> `House` or `Unit` as a filter. For the full list of values, see the
+> *Agents & Listings API - Data Dictionary* in the metadata.
+
+The API wraps records in group objects in its response. The `fetch_page`
+function later in this notebook unpacks that structure automatically.
+
+------------------------------------------------------------------------
+
+## The 1,000-Record Cap: Why It Matters
+
+Imagine you ask a librarian for every book published between 2019 and
+2024 on a particular topic. The librarian hands you a pile of 1,000
+books and says nothing. You take them home assuming that is all there
+is. But there were actually 4,200 books, the librarian quietly held back
+3,200 without any warning.
+
+That is exactly what the Domain API does. If your query matches 4,200
+records, you get the first 1,000. The remaining 3,200 are silently
+dropped. No error. No warning. No note saying "we held some back."
+
+The fix is to always ask the librarian "how many books match?" before
+deciding how to retrieve them. That is the density probe.
+
+------------------------------------------------------------------------
+
+## Setup: Check Your Packages
+
+Run the chunk below to confirm all required packages are installed. You
+should see "All packages found. Setup OK." at the end. If any package is
+missing, the chunk will tell you which one and what command to run to
+install it.
+
+```{r package-check}
+needed <- c("httr2", "jsonlite", "purrr", "tibble", "dplyr", "readr")
+missing <- needed[!vapply(needed, requireNamespace, logical(1), quietly = TRUE)]
+
+if (length(missing) > 0) {
+  cat("The following packages are missing:\n")
+  for (pkg in missing) cat("  ", pkg, "\n")
+  cat("\nRun this in the R console:\n")
+  cat("  install.packages(c(", paste0('"', missing, '"', collapse = ", "), "))\n", sep = "")
+  cat("Then restart R (Session menu, Restart R) and run this chunk again.\n")
+} else {
+  cat("All packages found. Setup OK.\n")
+}
+```
+
+------------------------------------------------------------------------
+
+## Setup: Connect to the API
+
+The chunk below loads your credentials from the `.env` file and connects
+to the AURIN proxy. It prints your username so you can confirm the right
+account is being used. Your password is never printed.
+
+**What `source("utils.R")` does:** it runs the `utils.R` helper file,
+which loads your credentials and defines the functions shared across all
+five notebooks, so you do not need to repeat that code here. Because
+both files are in the same folder, the plain filename is all that is
+needed.
+
+```{r connect}
+library(dplyr)
+library(tibble)
+library(purrr)
+library(readr)
+
+source("utils.R")
+
+# Create a tracker that will count every API call we make
+tracker <- make_tracker()
+
+cat("Connected to:", PROXY_BASE, "\n")
+cat("Account:     ", AURIN_USERNAME, "\n")
+```
+
+**Expected output:** Two lines. The first shows the proxy URL. The
+second shows your AURIN email address. If the chunk stops with an error
+about `.env`, re-read Step 2 in Notebook 0 and confirm the `.env` file
+is in the main `domain_api` folder (not inside
+`training-materials-r/phase-2/`). The error message prints the folder it
+searched.
+
+------------------------------------------------------------------------
+
+## Step 1: The Density Probe
+
+Before downloading anything, run a quick 1-credit check to find out how
+many records your query would return. This is like asking "how many
+books match my search?" before deciding how to retrieve them.
+
+The probe sends a request with `pageSize = 1` (asking for just one
+record). The API processes the full query and tells you the total match
+count in a response header called `X-Total-Count`. The probe function
+reads that header and returns the number.
+
+We will probe two suburbs:
+
+- **South Yarra 3141** (inner Melbourne, broad date window), expected to
+  exceed 1,000
+- **Williamstown 3016** (outer Melbourne, narrower window), expected to
+  be under 1,000
+
+### Define the queries
+
+First, define the search parameters for each suburb. Read the comments
+carefully, each line explains what it does. You will not spend any
+credits yet.
+
+```{r define-queries}
+# Define the search for South Yarra (dense suburb, broad date window)
+dense_payload <- list(
+  listingType = "Sold",        # we want properties that have already sold
+  listedSince = "2019-01-01",  # only include listings that appeared from this date onwards
+  locations = list(list(
+    state    = "VIC",
+    suburb   = "South Yarra",  # suburb name, must match Domain exactly
+    postCode = "3141",
+    includeSurroundingSuburbs = FALSE  # do not include neighbouring suburbs
+  ))
+)
+
+# Define the search for Williamstown (sparser suburb, narrower date window)
+sparse_payload <- list(
+  listingType = "Sold",
+  listedSince = "2023-01-01",  # shorter window keeps count under 1,000
+  locations = list(list(
+    state    = "VIC",
+    suburb   = "Williamstown",
+    postCode = "3016",
+    includeSurroundingSuburbs = FALSE
+  ))
+)
+
+cat("Queries defined. No API calls made yet.\n")
+```
+
+> **Why `locations` is a list inside a list.** The API expects
+> `locations` to be a JSON *array* of location objects, even when there
+> is only one. `list(list(...))` produces `[{...}]`, which is correct.
+> Writing `list(...)` on its own would produce `{...}` and the API would
+> not accept it.
+
+### Run the probe
+
+The next chunk runs both probes. **This costs 2 credits total** (1 per
+probe). The output will show the record count for each suburb.
+
+Because this is a live API, the counts you see might be higher than the
+example figures shown in this notebook, new listings are added
+continuously. What matters is whether your count is above or below
+1,000, not the exact number.
+
+```{r run-probes}
+# Run the density probe for the dense suburb (1 credit)
+dense_count <- probe_count(dense_payload, tracker)
+tracker$checkpoint("Probes")
+
+# Run the density probe for the sparse suburb (1 credit)
+sparse_count <- probe_count(sparse_payload, tracker)
+tracker$checkpoint("Probes")
+
+cat("South Yarra 3141 (from 2019): ", format(dense_count,  big.mark = ","), " records\n", sep = "")
+cat("Williamstown 3016 (from 2023): ", format(sparse_count, big.mark = ","), " records\n", sep = "")
+```
+
+**What the numbers mean:**
+
+- If a count is **1,000 or less**, simple pagination (Step 2) will
+  retrieve all records in a straightforward page-by-page loop.
+- If a count is **over 1,000**, simple pagination will silently miss
+  records above position 1,000. Notebook 3 (Pagination Tricks) covers
+  the cursor advancement technique needed for those cases.
+
+The probe is never wasted. Even if the count turns out to be small, 1
+credit to confirm completeness is far cheaper than building a study on
+unknowingly incomplete data.
+
+------------------------------------------------------------------------
+
+## Step 2: Simple Pagination for Small Areas
+
+When the probe count is 1,000 or fewer, a page-by-page loop retrieves
+all records. Think of it like flipping through a short catalogue: you
+read page 1, page 2, and so on until you reach the last page. Each page
+holds up to 200 records.
+
+The loop stops when a page comes back with fewer records than the page
+size, or with no records at all. The second condition handles the case
+where the total is an exact multiple of 200. Without it, the loop would
+make one extra unnecessary API call.
+
+### The `fetch_page` function
+
+The chunk below defines a helper function that fetches one page at a
+time. Read the comments to understand each line. You will not call this
+function yet.
+
+```{r fetch-page}
+fetch_page <- function(base_payload, page, page_size = 200, tracker) {
+  # base_payload: the search criteria (suburb, date range, listing type).
+  # page:         which page number to retrieve (1 = first page).
+  # page_size:    how many records per page (maximum 200).
+  #
+  # Returns: a list with two parts, $listings (the records) and $has_more
+  #          (TRUE if more pages exist, FALSE if this was the last).
+
+  # Add page number and page size to the query.
+  # modifyList() merges two lists, with the second one winning on any shared names.
+  payload <- modifyList(base_payload, list(pageSize = page_size, pageNumber = page))
+
+  # Send the request to the API
+  r <- tracker$post(
+    paste0(PROXY_BASE, "/v1/listings/residential/_search"),
+    json_body = payload
+  )
+
+  # If the request failed, print the error and return nothing
+  if (resp_status(r) != 200) {
+    cat("  Page", page, "failed: HTTP", resp_status(r), "\n")
+    return(list(listings = list(), has_more = FALSE))
+  }
+
+  # Extract the listings from the response JSON.
+  # The API wraps listings in groups (e.g. projects), so we unwrap them here.
+  groups <- resp_body_json(r, simplifyVector = FALSE)
+  listings <- list()
+
+  for (g in groups) {
+    raw <- g$listings
+    if (is.null(raw) || length(raw) == 0) raw <- g$listing
+    if (is.null(raw) || length(raw) == 0) next
+
+    # A JSON array of listings arrives as an UNNAMED list; a single JSON listing
+    # object arrives as a NAMED list. That is how we tell the two apart in R.
+    if (is.null(names(raw))) {
+      listings <- c(listings, raw)        # add a list of listings
+    } else {
+      listings <- c(listings, list(raw))  # add a single listing
+    }
+  }
+
+  # Check if there are more pages by comparing how many groups came back
+  # to the page size. If fewer came back, this was the last page.
+  hdr <- resp_header(r, "x-pagination-pagesize")
+  actual_page_size <- if (is.null(hdr)) page_size else as.integer(hdr)
+  has_more <- length(groups) >= actual_page_size
+
+  list(listings = listings, has_more = has_more)
+}
+
+cat("fetch_page defined.\n")
+```
+
+### The `fetch_all_simple` function
+
+This function calls `fetch_page` in a loop until there are no more
+pages. It collects all the results into one list. Run the chunk to
+define it.
+
+```{r fetch-all-simple}
+fetch_all_simple <- function(base_payload, tracker) {
+  # Retrieve all listings for a query that returns 1,000 or fewer total records.
+  #
+  # Loops through pages until no more are available. Prints progress as it goes.
+  # Do NOT use this for queries that exceed 1,000 records, use fetch_all_cursor
+  # from Notebook 3 instead.
+
+  all_listings <- list()   # this list will grow as we collect each page
+  page <- 1
+
+  repeat {  # keep looping until we explicitly break out
+    result <- fetch_page(base_payload, page, tracker = tracker)
+    batch  <- result$listings
+
+    all_listings <- c(all_listings, batch)  # add this page's results to the running total
+    cat("  Page ", page, ": +", length(batch),
+        " records | total so far: ", length(all_listings), "\n", sep = "")
+
+    # Stop if the page was empty, or if the API signals no more pages exist.
+    # The empty-batch check handles the edge case where the total record count
+    # is an exact multiple of page_size (e.g. exactly 200, 400, 600 ...): in
+    # that case the final real page looks "full" and has_more is TRUE, so without
+    # this check the loop would make one extra credit-costing call that returns
+    # nothing. Checking for an empty batch catches that and exits cleanly.
+    if (length(batch) == 0 || !result$has_more) break
+
+    page <- page + 1  # move to the next page
+  }
+
+  all_listings
+}
+
+cat("fetch_all_simple defined.\n")
+```
+
+### Run simple pagination on Williamstown
+
+The chunk below fetches all records for Williamstown 3016 using simple
+pagination. It then builds a table from the results so you can inspect
+them.
+
+**Expected output:** You should see one or more lines like "Page 1: +200
+records", followed by a table showing the first five listings.
+
+```{r fetch-williamstown}
+cat("Fetching Williamstown 3016 (simple pagination)...\n")
+williamstown_raw <- fetch_all_simple(sparse_payload, tracker)
+tracker$checkpoint("Williamstown simple fetch")
+
+# A listing's price lives in one of two places depending on the listing type,
+# so this small helper checks the sold price first and falls back to the asking price.
+sold_price_of <- function(item) {
+  price <- field(item, "soldData", "soldPrice")
+  if (is.na(price)) price <- field(item, "priceDetails", "price")
+  price
+}
+
+# Build a table from the raw listing data.
+# Each listing is a deeply nested list; we pull out the key fields here.
+# field() returns NA when a field is missing, which keeps every row the same shape.
+df_willi <- williamstown_raw |>
+  map(\(item) tibble(
+    id            = as.character(field(item, "id")),
+    suburb        = field(item, "propertyDetails", "suburb"),
+    property_type = field(item, "propertyDetails", "propertyType"),
+    bedrooms      = field(item, "propertyDetails", "bedrooms"),
+    date_listed   = substr(field(item, "dateListed"), 1, 10),  # keep only the date part
+    sold_price    = sold_price_of(item)
+  )) |>
+  bind_rows()
+
+cat("\nWilliamstown:", format(nrow(df_willi), big.mark = ","), "records fetched.\n")
+knitr::kable(head(df_willi, 5))
+```
+
+### What else is in each record?
+
+The table above only extracts six fields, but each listing contains much
+more. A few fields worth knowing about:
+
+| Field path | Description |
+|------------------------------------|------------------------------------|
+| `soldData.soldDate` | The date the property actually sold (different from `dateListed`, which is when the listing appeared on Domain) |
+| `soldData.saleMethod` | How it sold: `SoldByAuction`, `SoldByPrivateTreaty`, `SoldPriorToAuction`, `Withdrawn`, or `NotStated` |
+| `propertyDetails.displayableAddress` | Full street address as a single string |
+| `propertyDetails.bathrooms` | Number of bathrooms |
+| `propertyDetails.carspaces` | Number of car spaces |
+| `propertyDetails.landArea` | Land area in square metres |
+| `propertyDetails.buildingArea` | Building area in square metres |
+| `propertyDetails.features` | List of features, e.g. `AirConditioning`, `Ensuite` |
+| `headline` | The listing title as it appeared on Domain |
+
+**Why `substr(x, 1, 10)` is enough for the date:** date fields like
+`dateListed` and `soldData.soldDate` come back as ISO 8601 datetime
+strings (for example `2023-04-07T00:00:00`). The first 10 characters are
+always the date (`2023-04-07`); the time portion is always midnight and
+carries no information for sold listings. Taking the first 10 characters
+strips the time and gives a clean date string.
+
+Run the chunk below to inspect a single raw record and see the full
+structure returned by the API.
+
+```{r inspect-raw}
+# Print the first raw listing record so you can see everything the API returns.
+# No API call is made here, this is just inspecting data already fetched above.
+if (length(williamstown_raw) > 0) {
+  cat(jsonlite::toJSON(williamstown_raw[[1]], auto_unbox = TRUE, pretty = TRUE))
+} else {
+  cat("No records were fetched, so there is nothing to inspect.\n")
+}
+```
+
+------------------------------------------------------------------------
+
+## Step 3: Filter Your Search
+
+The payload accepts several filter fields. The most commonly used ones
+are:
+
+| Field | Example value | Effect |
+|------------------------|------------------------|------------------------|
+| `listingType` | `"Sold"`, `"Sale"`, `"Rent"`, `"Share"`, `"NewHomes"` | Limit to a specific listing category (see note below) |
+| `propertyTypes` | array of property type values | Limit to specific property types (see note below) |
+| `minBedrooms` | `2` | Only listings with at least this many bedrooms |
+| `maxBedrooms` | `4` | Only listings with at most this many bedrooms |
+| `listedSince` | `"2022-01-01"` | Only listings that appeared from this date onwards |
+
+> **`listingType` values:** `Sold` returns completed sales (what most
+> research uses). `Sale` returns properties currently listed for sale
+> but not yet sold. `Rent` returns rental listings. `Share` returns
+> share accommodation. `NewHomes` returns new home listings. For the
+> full list of filter fields and allowed values, see the *Agents &
+> Listings API - Data Dictionary* in the
+> `metadata/data dictionary (from domain)/` folder.
+
+> **`propertyTypes` filter values:** the API returns property types in
+> PascalCase (e.g. `ApartmentUnitFlat`, `Townhouse`, `House`). See the
+> full list in the response field table in the previous section. Whether
+> the filter accepts these same values, or different ones, is not
+> documented in the schema. Check the *Agents & Listings API - Data
+> Dictionary* for confirmed filter values before using this field, and
+> verify your results against your probe count.
+
+The chunk below adds a bedroom filter to the Williamstown query and
+shows how the record count changes. Filtering costs the same as an
+unfiltered probe (1 credit per check).
+
+```{r filtered-probe}
+# Add a bedroom filter to the Williamstown search.
+# modifyList() starts with the same criteria as before and adds the two new fields.
+filtered_payload <- modifyList(sparse_payload, list(
+  minBedrooms = 2,   # only properties with at least 2 bedrooms
+  maxBedrooms = 4    # only properties with at most 4 bedrooms
+))
+
+# Check how many listings match the filtered criteria (1 credit)
+filtered_count <- probe_count(filtered_payload, tracker)
+tracker$checkpoint("Filtered probe")
+
+cat("Williamstown (all bedrooms):   ", format(sparse_count,   big.mark = ","), "records\n")
+cat("Williamstown (2 to 4 bedrooms):", format(filtered_count, big.mark = ","), "records\n\n")
+cat("Excluded:", format(sparse_count - filtered_count, big.mark = ","),
+    "records (studios, 1-bed, and 5-bed-plus properties)\n")
+```
+
+------------------------------------------------------------------------
+
+## Checking Your Work
+
+Compare the number of records you fetched against the probe count from
+Step 1. They should be close. A small difference (a few records) is
+normal because new listings can appear between the probe and the full
+fetch.
+
+A large difference (more than 10%) suggests the date window in the
+payload changed between the probe and the fetch, or that filters were
+applied inconsistently.
+
+```{r check-work}
+# Compare the probe count to the actual fetch count
+cat(sprintf("Probe count (from Step 1):    %6s\n", format(sparse_count,   big.mark = ",")))
+cat(sprintf("Fetched count:                %6s\n", format(nrow(df_willi), big.mark = ",")))
+cat(sprintf("Difference:                   %6s  (a small number is expected)\n",
+            format(abs(sparse_count - nrow(df_willi)), big.mark = ",")))
+cat("\n")
+
+# Check for duplicate records (there should be none)
+duplicates <- sum(duplicated(df_willi$id))
+cat("Duplicate listing IDs:", duplicates, " (expected: 0)\n\n")
+
+cat("Date range covered:\n")
+cat("  Earliest listing:", min(df_willi$date_listed, na.rm = TRUE), "\n")
+cat("  Latest listing:  ", max(df_willi$date_listed, na.rm = TRUE), "\n")
+```
+
+------------------------------------------------------------------------
+
+## Saving Your Results
+
+Once you have a table, save it as a CSV file. A CSV is a plain-text
+spreadsheet that Excel and other tools can open. Run the chunk below to
+save the Williamstown dataset.
+
+> **Save early, save often.** Data fetched from the API only exists in
+> memory while the R session is running. If R crashes, you restart the
+> session, or your computer shuts down, that data is gone and you will
+> need to call the API again, spending credits you have already used.
+> Get into the habit of saving to a CSV file immediately after every
+> fetch, before doing any further analysis.
+
+```{r save-csv}
+# Save the dataset to a CSV file.
+# write_csv does not write row numbers, which is what you want.
+# If you save somewhere other than this folder, give the full path, using
+# forward slashes (/) or doubled backslashes (\\). A pasted Windows path with
+# single backslashes may not work.
+output_filename <- "williamstown_sold_listings.csv"
+write_csv(df_willi, output_filename)
+
+cat("Saved:  ", output_filename, "\n")
+cat("Rows:   ", format(nrow(df_willi), big.mark = ","), "\n")
+cat("Columns:", paste(names(df_willi), collapse = ", "), "\n\n")
+cat("You can open this file in Excel or import it into Python, QGIS, or STATA.\n")
+```
+
+------------------------------------------------------------------------
+
+## What If Something Goes Wrong?
+
+**An error about `.env` when loading credentials:** The `.env` file is
+missing or in the wrong location. It must be in the main `domain_api`
+folder, not inside `training-materials-r/phase-2/`. Check that the file
+name starts with a dot and has no other extension (`.env.txt` will not
+work). The error message prints the folder it searched.
+
+**Probe returns 0 or the fetch returns an empty table:** The suburb name
+or postcode may be incorrect. Domain's website shows the correct
+spelling. Verify that `suburb` and `postCode` in the payload match
+exactly, including capitalisation. For example, "south yarra" will not
+work; it must be "South Yarra".
+
+**The fetch count is much lower than the probe count:** The probe and
+full fetch were run far apart in time, and new listings appeared between
+them. A difference of more than 10% may also indicate that the date
+window in the payload changed between the probe and the fetch. Re-run
+the probe to confirm.
+
+**The probe returns more than 1,000 records:** Simple pagination will
+silently miss records above position 1,000. See Notebook 3 (Pagination
+Tricks) for the cursor advancement technique that handles this case.
+
+------------------------------------------------------------------------
+
+## What's Next: Notebook 2
+
+You can now query the listings endpoint, apply filters, retrieve all
+pages for areas with up to 1,000 records, and save the results to a CSV
+file.
+
+**Notebook 2** covers a completely different endpoint: aggregated market
+statistics. Instead of individual property records, it returns one row
+per quarter, summarising the median sale price, the number of properties
+sold, and average days on market across an entire suburb. One call
+retrieves up to 11 years of quarterly history for the same cost as a
+single listings probe.
+
+Open `notebook-2-suburb-statistics.Rmd` to continue.
+
+------------------------------------------------------------------------
+
+## Credit Summary
+
+The table below shows how many API credits were consumed in each section
+of this notebook. Each row corresponds to a checkpoint label you saw
+printed during the run.
+
+Credits reset to 1,000 on the first of each calendar month. You can
+check your remaining balance on the AURIN dashboard. There is no
+programmatic way to check the balance, dashboard checks are a required
+part of the workflow before any large extraction.
+
+```{r credit-summary}
+tracker$summary()
+```

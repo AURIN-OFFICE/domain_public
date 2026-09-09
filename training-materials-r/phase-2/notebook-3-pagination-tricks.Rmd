@@ -1,0 +1,1034 @@
+---
+title: "Notebook 3: Pagination Tricks"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+```
+
+## What this notebook covers
+
+Two situations make basic page-by-page fetching from Notebook 1
+inadequate:
+
+1.  **More than 1,000 records.** The listings endpoint silently
+    truncates results at 1,000. Areas like South Yarra or the inner-city
+    ring have far more than 1,000 listings for any multi-year window.
+    This notebook solves this by splitting the retrieval into
+    overlapping date windows.
+
+2.  **Large multi-suburb extractions.** Fetching 50 suburbs in a single
+    run can take 20 to 30 minutes and can consume a significant number
+    of credits. If anything goes wrong mid-run, all progress is lost
+    without a checkpoint system.
+
+This notebook covers both techniques and shows how to combine them into
+a robust extraction loop.
+
+**By the end** you will have run a complete multi-suburb extraction that
+can survive interruptions without wasting credits.
+
+------------------------------------------------------------------------
+
+## Before You Start
+
+**Complete Notebooks 0 and 1 before this one.** Notebook 3 builds on the
+probe and pagination patterns from Notebooks 0 and 1, and assumes you
+are already comfortable with the listings endpoint. Notebook 2 (suburb
+statistics) is independent and can be completed before or after this
+notebook.
+
+**If you have already completed Notebooks 0 and 1**, your packages,
+`.env` file, and connection are already set up.
+
+------------------------------------------------------------------------
+
+## Key Terms
+
+**Cursor:** A marker that tracks your position in a large dataset. When
+you cannot page past position 1,000, you move the cursor (your starting
+date) forward and start paging again from the new position.
+
+**Cursor advancement:** The technique of repeatedly advancing the
+`listedSince` date to step through a dataset that exceeds 1,000 records.
+
+**Deduplication:** Removing duplicate records. Some listings appear in
+two consecutive cursor windows because they fall right on the boundary
+date. Storing records in a *named list* keyed by listing ID removes them
+automatically: assigning the same name twice simply overwrites.
+
+**Checkpoint:** A saved record of how far an operation has progressed,
+like hitting Save in a video game. If something fails, you restart from
+the last save point, not from the beginning.
+
+**Resume:** Continuing an interrupted operation by loading a checkpoint
+and skipping the steps already completed.
+
+**Interrupt:** What R raises when you press the Stop button in RStudio
+(or Ctrl+C in a terminal). We catch this to save progress before
+stopping.
+
+**CSV file:** A plain-text spreadsheet format that Excel and other tools
+can open.
+
+------------------------------------------------------------------------
+
+## Part 1: The 1,000-Record Cap
+
+The listings endpoint returns at most **1,000 records per request**. If
+your query matches 4,200 records, you get the first 1,000. The remaining
+3,200 are silently dropped, with no error and no warning.
+
+Notebook 1 introduced the density probe: a 1-credit check that tells you
+the total count before you download anything. If that count is over
+1,000, simple pagination cannot retrieve the full dataset. This section
+shows you how to handle it.
+
+### Credit cost per suburb
+
+Each suburb requires one probe credit, then one credit per page of
+results (up to 200 records per page):
+
+-   1 to 200 records, **2 credits** (1 probe + 1 page)
+-   201 to 400 records, **3 credits** (1 probe + 2 pages)
+-   401 to 600 records, **4 credits** (1 probe + 3 pages)
+-   and so on
+
+Most inner-city suburbs have several hundred to a few thousand records,
+so **3 to 15 credits per suburb** is a typical range. The 10-suburb run
+at the end of this notebook spent 218 credits in total.
+
+### Why checkpoints matter
+
+If a 50-suburb run fails halfway through and you have no checkpoint, you
+must start over from suburb 1, spending all those credits again. With a
+checkpoint, the completed suburbs are skipped and only the remaining
+ones are fetched.
+
+| Scenario                                             | Credits spent                           | Credits wasted                         |
+|------------------------|------------------------|------------------------|
+| 50-suburb run, no failure                            | \~150 to 500 depending on suburb sizes  | 0                                      |
+| Failure at suburb 35, restart **without** checkpoint | Double the above                        | \~105+ (suburbs 1 to 35 fetched twice) |
+| Failure at suburb 35, restart **with** checkpoint    | \~original cost + suburbs 36 to 50 only | 0                                      |
+
+The monthly credit limit is 1,000. A single failed un-checkpointed run
+can waste more than 10% of your monthly budget before you collect any
+usable data.
+
+------------------------------------------------------------------------
+
+## Setup: Check Packages
+
+```{r package-check}
+needed <- c("httr2", "jsonlite", "purrr", "tibble", "dplyr", "readr")
+missing <- needed[!vapply(needed, requireNamespace, logical(1), quietly = TRUE)]
+
+if (length(missing) > 0) {
+  cat("Missing packages, run in the R console:\n")
+  cat("  install.packages(c(", paste0('"', missing, '"', collapse = ", "), "))\n", sep = "")
+} else {
+  cat("All packages found. Setup OK.\n")
+}
+```
+
+## Setup: Connect to the API and Create the Checkpoint Folder
+
+The chunk below also creates a `checkpoints/` folder inside `phase-2/`
+where the progress files will be saved. If the folder already exists,
+nothing happens.
+
+```{r connect}
+library(dplyr)
+library(tibble)
+library(purrr)
+library(readr)
+
+source("utils.R")
+
+tracker <- make_tracker()
+
+# Checkpoints are written to a "checkpoints" folder next to this notebook.
+# To use a different folder, give the full path with forward slashes (/) or
+# doubled backslashes (\\), since a pasted Windows path with single
+# backslashes may not work.
+CHECKPOINT_DIR <- "checkpoints"
+dir.create(CHECKPOINT_DIR, showWarnings = FALSE)  # showWarnings = FALSE: fine if it exists
+
+CHECKPOINT_FILE <- file.path(CHECKPOINT_DIR, "extraction_checkpoint.json")
+
+cat("Connected to:", PROXY_BASE, "\n")
+cat("Account:     ", AURIN_USERNAME, "\n")
+cat("Checkpoint folder:", normalizePath(CHECKPOINT_DIR), "\n")
+```
+
+------------------------------------------------------------------------
+
+## Cursor Advancement
+
+When the density probe shows more than 1,000 records, cursor advancement
+splits the retrieval into date windows.
+
+Each window fetches up to 1,000 records sorted oldest to newest. When
+the cap is hit, `listedSince` advances to the listing date of the last
+record in that batch and the fetch restarts from there.
+
+The cursor lands on the last record's date, not the day after, because
+multiple listings can share the same date. Any listings dated the same
+day as the 1,000th record that did not fit in the batch would be missed
+if the cursor skipped ahead by one day. Since we cannot see past the
+1,000th record, the last known date is the only safe position.
+
+This means some records near the boundary will be fetched twice. That is
+by design: results are stored in a named list keyed by listing ID, so a
+duplicate simply overwrites the original and the final dataset stays
+clean.
+
+We will demonstrate this on South Yarra 3141 from 2019 onwards, which
+has well over 1,000 sold listings.
+
+### Step 1: Confirm the record count
+
+```{r probe-south-yarra}
+# Define the South Yarra query for the cursor demonstration
+south_yarra_payload <- list(
+  listingType = "Sold",
+  listedSince = "2019-01-01",
+  locations = list(list(
+    state    = "VIC",
+    suburb   = "South Yarra",
+    postCode = "3141",
+    includeSurroundingSuburbs = FALSE
+  ))
+)
+
+# Run a density probe to confirm the count (1 credit)
+sy_count <- probe_count(south_yarra_payload, tracker)
+tracker$checkpoint("South Yarra probe")
+
+cat("South Yarra 3141 (from 2019): ", format(sy_count, big.mark = ","), " records\n", sep = "")
+cat("Exceeds 1,000-record limit:   ", !is.null(sy_count) && sy_count > 1000, "\n")
+cat("\n")
+cat("Simple pagination would silently miss everything above record 1,000.\n")
+cat("Cursor advancement retrieves the complete dataset.\n")
+```
+
+### Step 2: Define the cursor function
+
+The `fetch_all_cursor` function below implements cursor advancement. The
+comments walk through each stage.
+
+```{r fetch-all-cursor}
+fetch_all_cursor <- function(base_payload, start_date, page_size = 200, tracker) {
+  # Retrieve ALL listings for a query that may exceed 1,000 results.
+  #
+  # Uses cursor advancement: repeatedly advances listedSince to step through
+  # the full dataset in chunks of up to 1,000. Deduplicates by listing ID.
+  #
+  # base_payload: the search criteria (suburb, listing type) WITHOUT listedSince.
+  # start_date:   the earliest listing date to include (YYYY-MM-DD format).
+  # page_size:    records per page (max 200).
+  #
+  # Returns: a deduplicated list of all listing records.
+
+  all_listings  <- list()   # named by listing ID, so duplicates overwrite themselves
+  current_since <- start_date
+  prev_cursor   <- NULL
+  run           <- 0
+
+  repeat {
+    run   <- run + 1
+    page  <- 1
+    batch <- list()
+    hit_limit <- FALSE
+
+    # --- Inner loop: page through this cursor window ---
+    repeat {
+      payload <- modifyList(base_payload, list(
+        listedSince = current_since,
+        sort        = list(sortKey = "DateListed", direction = "Ascending"),
+        pageSize    = page_size,
+        pageNumber  = page
+      ))
+
+      r <- tracker$post(
+        paste0(PROXY_BASE, "/v1/listings/residential/_search"),
+        json_body = payload
+      )
+
+      # The API refuses to page past record 1,000. That refusal is the signal
+      # to advance the cursor rather than an error to report.
+      if (resp_status(r) == 400 && grepl("Cannot page beyond 1000", resp_body_string(r))) {
+        hit_limit <- TRUE
+        break
+      }
+
+      if (resp_status(r) != 200) {
+        cat("  Run ", run, ", page ", page, ": unexpected HTTP ",
+            resp_status(r), "\n", sep = "")
+        return(unname(all_listings))
+      }
+
+      groups <- resp_body_json(r, simplifyVector = FALSE)
+      for (g in groups) {
+        raw <- g$listings
+        if (is.null(raw) || length(raw) == 0) raw <- g$listing
+        if (is.null(raw) || length(raw) == 0) next
+        # An unnamed list is a JSON array of listings; a named list is one listing
+        if (is.null(names(raw))) batch <- c(batch, raw) else batch <- c(batch, list(raw))
+      }
+
+      hdr <- resp_header(r, "x-pagination-pagesize")
+      actual_page_size <- if (is.null(hdr)) page_size else as.integer(hdr)
+      if (length(groups) < actual_page_size) break
+      page <- page + 1
+    }
+
+    # --- Merge this window's batch into the running total ---
+    before <- length(all_listings)
+    for (item in batch) {
+      id <- field(item, "id")
+      if (!is.na(id)) all_listings[[as.character(id)]] <- item
+    }
+    cat(sprintf("  Cursor run %d: +%5d new | total: %6d\n",
+                run, length(all_listings) - before, length(all_listings)))
+
+    # If we never hit the cap, this window held everything left. Done.
+    if (!hit_limit || length(batch) == 0) break
+
+    # --- Advance the cursor to the latest listing date we saw ---
+    dates <- vapply(batch, \(item) substr(field(item, "dateListed"), 1, 10), character(1))
+    dates <- dates[!is.na(dates)]
+    if (length(dates) == 0) break
+
+    # Dates are YYYY-MM-DD strings, so the alphabetical maximum is also the latest date
+    cursor <- max(dates)
+
+    # If the cursor cannot move, every record in the window shares one date and
+    # we would loop forever. Stop and say so rather than spending credits silently.
+    if (!is.null(prev_cursor) && cursor == prev_cursor) {
+      cat("  Cursor stuck at ", cursor,
+          " -- stopping. Some records near this date may be missed.\n", sep = "")
+      break
+    }
+
+    prev_cursor   <- cursor
+    current_since <- cursor
+  }
+
+  unname(all_listings)
+}
+
+cat("fetch_all_cursor defined.\n")
+```
+
+### Step 3: Fetch all South Yarra listings
+
+The chunk below runs the full extraction. Each cursor window fetches up
+to 1,000 records across up to 5 pages of 200 records each, so **one
+cursor window costs up to 5 credits**. The total depends on how many
+records match the query.
+
+**Expected output:** Several lines like "Cursor run 1: +1,000 new \|
+total: 1,000", continuing until a final run with fewer than 1,000 new
+records.
+
+```{r fetch-south-yarra}
+cat("Fetching South Yarra 3141 (cursor advancement)...\n")
+south_yarra_raw <- fetch_all_cursor(south_yarra_payload, start_date = "2019-01-01",
+                                    tracker = tracker)
+tracker$checkpoint("South Yarra cursor fetch")
+
+# A listing's price lives in one of two places depending on listing type
+sold_price_of <- function(item) {
+  price <- field(item, "soldData", "soldPrice")
+  if (is.na(price)) price <- field(item, "priceDetails", "price")
+  price
+}
+
+# Build a table from the results
+df_sy <- south_yarra_raw |>
+  map(\(item) tibble(
+    id            = as.character(field(item, "id")),
+    suburb        = field(item, "propertyDetails", "suburb"),
+    property_type = field(item, "propertyDetails", "propertyType"),
+    bedrooms      = field(item, "propertyDetails", "bedrooms"),
+    date_listed   = substr(field(item, "dateListed"), 1, 10),
+    sold_price    = sold_price_of(item)
+  )) |>
+  bind_rows()
+
+cat("\nSouth Yarra:", format(nrow(df_sy), big.mark = ","), "records fetched.\n")
+knitr::kable(head(df_sy, 5))
+```
+
+### Step 4: Validate the results
+
+Compare the cursor fetch count against the probe count from Step 1. They
+should be close. A small difference (a few records) is normal because
+new listings can appear between the probe and the full fetch. A large
+difference (more than 10%) suggests the cursor may have got stuck or the
+date window was misconfigured.
+
+```{r validate-cursor}
+cat(sprintf("Probe count:          %6s\n", format(sy_count,      big.mark = ",")))
+cat(sprintf("Cursor fetched count: %6s\n", format(nrow(df_sy),   big.mark = ",")))
+cat(sprintf("Difference:           %6s  (a small number is expected)\n",
+            format(abs(sy_count - nrow(df_sy)), big.mark = ",")))
+cat("\n")
+
+duplicates <- sum(duplicated(df_sy$id))
+cat("Duplicate listing IDs:", duplicates, " (expected: 0)\n\n")
+
+cat("Date range covered:\n")
+cat("  Earliest listing:", min(df_sy$date_listed, na.rm = TRUE), "\n")
+cat("  Latest listing:  ", max(df_sy$date_listed, na.rm = TRUE), "\n")
+```
+
+------------------------------------------------------------------------
+
+## Part 2: Checkpoint Recovery
+
+The cursor advancement above retrieves all listings for one suburb. For
+a large study covering 50 suburbs, cursor advancement alone is not
+enough: if the run fails midway, you lose all progress and must restart
+from scratch, spending all those credits again.
+
+The checkpoint pattern saves your progress to disk after each suburb. On
+a restart, suburbs already in the checkpoint are skipped without
+spending any credits. The sections below define the save and load
+functions, wrap cursor advancement into a per-suburb fetcher, and
+combine both into a checkpoint-aware extraction loop.
+
+------------------------------------------------------------------------
+
+## What the Checkpoint File Contains
+
+The checkpoint file is a JSON file with three pieces of information:
+
+1.  **`completed`:** a list of suburb labels (e.g. "Carlton 3053") that
+    have been fully downloaded. When resuming, any suburb in this list
+    is skipped.
+
+2.  **`results`:** all listing records collected so far, stored as a
+    named list keyed by listing ID. Using the ID as the name ensures
+    that if a suburb is accidentally fetched twice (e.g. because it was
+    in progress when a failure occurred), each listing appears only
+    once.
+
+3.  **`last_updated`:** the date and time the checkpoint was last
+    written.
+
+An example checkpoint file looks like this:
+
+``` json
+{
+  "completed": ["Carlton 3053", "Fitzroy 3065"],
+  "results": {"123456": {"id": "123456"}, "789012": {"id": "789012"}},
+  "last_updated": "2026-05-13T14:22:00"
+}
+```
+
+### Define the save and load functions
+
+The `save_checkpoint()` function writes the current progress to the
+checkpoint file. The `load_checkpoint()` function reads it back. Both
+are simple: they just convert R data to and from a JSON text file.
+
+Read the comments in the chunk below for a line-by-line explanation.
+
+```{r checkpoint-functions}
+save_checkpoint <- function(path, completed, results_list) {
+  # path:         the file path to write to.
+  # completed:    character vector of suburb labels that are fully done.
+  # results_list: named list mapping listing ID to listing record.
+
+  payload <- list(
+    # I() tells jsonlite "keep this as a JSON array, even if it has one element".
+    # Without it, a single completed suburb would be written as "Carlton 3053"
+    # instead of ["Carlton 3053"], and loading it back would break the resume logic.
+    completed    = I(completed),
+    results      = results_list,
+    last_updated = format(Sys.time(), "%Y-%m-%dT%H:%M:%S")
+  )
+
+  # write_json converts the R list into a JSON text file
+  jsonlite::write_json(payload, path, auto_unbox = TRUE, null = "null", digits = NA)
+
+  cat("    [saved]", length(completed), "suburbs done,",
+      format(length(results_list), big.mark = ","), "listings.\n")
+}
+
+
+load_checkpoint <- function(path) {
+  # If no checkpoint file exists (first run), returns empty placeholders
+  # so the extraction loop can start fresh.
+  #
+  # Returns a list with two parts: $completed and $results.
+
+  if (file.exists(path)) {  # if a checkpoint file is on disk, load it
+    data <- jsonlite::read_json(path, simplifyVector = FALSE)
+
+    # read_json gives back a list of single strings; unlist turns it into a
+    # plain character vector, which is what the "already done?" check expects.
+    completed <- unlist(data$completed)
+    if (is.null(completed)) completed <- character(0)
+
+    results <- if (is.null(data$results)) list() else data$results
+
+    cat("Checkpoint loaded:", length(completed), "suburbs already done,",
+        format(length(results), big.mark = ","), "listings.\n")
+    cat("Last saved:", if (is.null(data$last_updated)) "unknown" else data$last_updated, "\n")
+
+    list(completed = completed, results = results)
+  } else {  # no checkpoint file, start fresh
+    cat("No checkpoint file found. Starting from scratch.\n")
+    list(completed = character(0), results = list())
+  }
+}
+
+cat("save_checkpoint and load_checkpoint defined.\n")
+```
+
+### Confirm the round-trip works
+
+Before using these functions for real data, the chunk below saves a
+small test checkpoint and loads it back. You should see the same data
+you saved, confirming that the save and load functions are working
+correctly.
+
+```{r checkpoint-roundtrip}
+# Save a tiny test checkpoint
+test_file <- file.path(CHECKPOINT_DIR, "test_checkpoint.json")
+save_checkpoint(
+  test_file,
+  completed    = c("Carlton 3053"),
+  results_list = list("99999" = list(id = "99999", suburb = "Carlton"))
+)
+
+# Load it back
+loaded <- load_checkpoint(test_file)
+
+cat("\n")
+cat("Completed suburbs loaded:", loaded$completed, "\n")
+cat("Listing IDs loaded:      ", names(loaded$results), "\n")
+
+# Remove the test file, it was just for demonstration
+file.remove(test_file)
+cat("\nTest complete. Test file removed.\n")
+```
+
+------------------------------------------------------------------------
+
+## The Extraction Functions
+
+The two functions below handle the actual API fetching. You do not need
+to understand the internals, just know what each one does:
+
+-   **`fetch_suburb_listings(suburb, state, postcode, start_date)`:**
+    downloads all sold listings for one suburb from `start_date`
+    onwards. Uses the cursor advancement defined above, so it works
+    correctly even for suburbs with more than 1,000 listings. Returns a
+    named list mapping listing ID to listing record.
+
+-   **`extract_fields(item)`:** takes one raw listing record (a complex
+    nested list) and pulls out the fields you need into a flat row,
+    ready to put in a spreadsheet.
+
+Run both chunks to define the functions.
+
+```{r fetch-suburb-listings}
+fetch_suburb_listings <- function(suburb, state, postcode, start_date,
+                                  listing_type = "Sold", page_size = 200, tracker) {
+  # Download all listings for one suburb using cursor advancement.
+  #
+  # Uses the same cursor technique defined earlier in this notebook, wrapped into
+  # a single function call. Works for any number of records, not just under 1,000.
+  #
+  # Returns a named list mapping listing ID to the full listing record.
+
+  base_payload <- list(
+    listingType = listing_type,
+    locations = list(list(
+      state    = state,
+      suburb   = suburb,
+      postCode = postcode,
+      includeSurroundingSuburbs = FALSE
+    ))
+  )
+
+  all_listings  <- list()
+  current_since <- start_date
+  prev_cursor   <- NULL
+  run           <- 0
+
+  repeat {
+    run   <- run + 1
+    page  <- 1
+    batch <- list()
+    hit_limit <- FALSE
+
+    repeat {
+      payload <- modifyList(base_payload, list(
+        listedSince = current_since,
+        sort        = list(sortKey = "DateListed", direction = "Ascending"),
+        pageSize    = page_size,
+        pageNumber  = page
+      ))
+
+      r <- tracker$post(
+        paste0(PROXY_BASE, "/v1/listings/residential/_search"),
+        json_body = payload
+      )
+
+      if (resp_status(r) == 400 && grepl("Cannot page beyond 1000", resp_body_string(r))) {
+        hit_limit <- TRUE
+        break
+      }
+      if (resp_status(r) != 200) {
+        cat("      [", suburb, "] HTTP ", resp_status(r),
+            " on run ", run, " page ", page, "\n", sep = "")
+        return(all_listings)
+      }
+
+      groups <- resp_body_json(r, simplifyVector = FALSE)
+      for (g in groups) {
+        raw <- g$listings
+        if (is.null(raw) || length(raw) == 0) raw <- g$listing
+        if (is.null(raw) || length(raw) == 0) next
+        if (is.null(names(raw))) batch <- c(batch, raw) else batch <- c(batch, list(raw))
+      }
+
+      hdr <- resp_header(r, "x-pagination-pagesize")
+      actual_page_size <- if (is.null(hdr)) page_size else as.integer(hdr)
+      if (length(groups) < actual_page_size) break
+      page <- page + 1
+    }
+
+    for (item in batch) {
+      id <- field(item, "id")
+      if (!is.na(id)) all_listings[[as.character(id)]] <- item
+    }
+
+    if (!hit_limit || length(batch) == 0) break
+
+    dates <- vapply(batch, \(item) substr(field(item, "dateListed"), 1, 10), character(1))
+    dates <- dates[!is.na(dates)]
+    if (length(dates) == 0) break
+    cursor <- max(dates)
+    if (!is.null(prev_cursor) && cursor == prev_cursor) break
+    prev_cursor   <- cursor
+    current_since <- cursor
+  }
+
+  all_listings
+}
+
+cat("fetch_suburb_listings defined.\n")
+```
+
+```{r extract-fields}
+extract_fields <- function(item) {
+  # Pull the key fields out of a raw listing record into a flat row.
+  #
+  # API listing records are deeply nested lists. field() walks that nesting and
+  # returns NA when any level is missing, so every row comes out the same shape.
+  #
+  # item: one listing record from the API response.
+  # Returns: a one-row tibble with the key fields.
+
+  price <- field(item, "soldData", "soldPrice")
+  if (is.na(price)) price <- field(item, "priceDetails", "price")
+
+  tibble(
+    listing_id    = as.character(field(item, "id")),
+    suburb        = field(item, "propertyDetails", "suburb"),
+    property_type = field(item, "propertyDetails", "propertyType"),  # e.g. 'House'
+    bedrooms      = field(item, "propertyDetails", "bedrooms"),
+    date_listed   = substr(field(item, "dateListed"), 1, 10),        # keep only YYYY-MM-DD
+    date_sold     = substr(field(item, "soldData", "soldDate"), 1, 10),
+    sold_price    = price,
+    sale_method   = field(item, "soldData", "saleMethod")  # e.g. 'SoldByAuction'
+  )
+}
+
+cat("extract_fields defined.\n")
+```
+
+------------------------------------------------------------------------
+
+## The Checkpoint-Aware Extraction Loop
+
+Here is what the loop does, step by step:
+
+1.  **On startup:** load the checkpoint file if it exists. If no file
+    exists, start with empty progress.
+2.  **For each suburb:** check if it is already in the `completed` list.
+    If yes, print "already done, skipping" and move on. If no, fetch it.
+3.  **After each suburb:** save the updated checkpoint to disk.
+4.  **If interrupted:** catch the interrupt, save one final checkpoint,
+    and print instructions for resuming.
+
+### Configure your suburb list and start date
+
+Edit the chunk below to set up your actual study area. The suburb name
+must be spelled exactly as it appears on the Domain website. The start
+date is in `YYYY-MM-DD` format.
+
+> **Note:** There is a start date but no end date. The extraction
+> retrieves all records from `START_DATE` up to the most recent listing
+> available at the time you run it. If you need to limit your study to a
+> specific period, you will need to filter the resulting table by date
+> after the extraction completes.
+
+```{r configure-suburbs}
+# Edit this chunk to define your study area.
+# Each entry is suburb name, state code, postcode.
+SUBURBS_TO_FETCH <- list(
+  list("Carlton",     "VIC", "3053"),
+  list("Fitzroy",     "VIC", "3065"),
+  list("Collingwood", "VIC", "3066"),
+  list("Richmond",    "VIC", "3121"),
+  list("Brunswick",   "VIC", "3056"),
+  list("Northcote",   "VIC", "3070"),
+  list("Abbotsford",  "VIC", "3067"),
+  list("Prahran",     "VIC", "3181"),
+  list("St Kilda",    "VIC", "3182"),
+  list("South Yarra", "VIC", "3141")
+)
+
+# Only include listings where the listing date is on or after this date
+START_DATE <- "2022-01-01"
+
+cat("Suburbs to fetch:", length(SUBURBS_TO_FETCH), "\n")
+cat("Start date:", START_DATE, "\n\n")
+cat("Suburb list:\n")
+for (entry in SUBURBS_TO_FETCH) {
+  cat("  ", entry[[1]], " ", entry[[3]], " (", entry[[2]], ")\n", sep = "")
+}
+```
+
+### Run the extraction
+
+**This chunk will make real API calls and spend real credits.** Before
+running it:
+
+-   Confirm the suburb list and start date above are correct.
+-   Check your remaining credit balance on the AURIN dashboard.
+
+The chunk will print progress as it goes. If you press the Stop button
+in RStudio (or close your laptop), the checkpoint is saved and you can
+re-run this chunk to continue from where you stopped.
+
+```{r run-extraction}
+# Load any existing checkpoint (returns empty placeholders if none exists)
+cp        <- load_checkpoint(CHECKPOINT_FILE)
+completed <- cp$completed
+results   <- cp$results
+cat("\n")
+
+tryCatch({
+
+  for (entry in SUBURBS_TO_FETCH) {
+    suburb   <- entry[[1]]
+    state    <- entry[[2]]
+    postcode <- entry[[3]]
+
+    key <- paste(suburb, postcode)  # a label for this suburb used in the checkpoint
+
+    if (key %in% completed) {
+      # This suburb is already done, skip it without spending any credits
+      cat("  [", key, "] already done -- skipping.\n", sep = "")
+      next
+    }
+
+    cat("  Fetching ", key, "...\n", sep = "")
+    suburb_results <- fetch_suburb_listings(
+      suburb, state, postcode, start_date = START_DATE, tracker = tracker
+    )
+
+    # Add this suburb's listings to the running total.
+    # Assigning by name means a listing already present is overwritten, not duplicated.
+    results[names(suburb_results)] <- suburb_results
+
+    # Mark this suburb as done
+    completed <- c(completed, key)
+
+    # Save progress to disk immediately after each suburb completes
+    save_checkpoint(CHECKPOINT_FILE, completed, results)
+
+    cat("  [", key, "] done: ", format(length(suburb_results), big.mark = ","),
+        " listings.\n", sep = "")
+  }
+
+  # This runs only if the loop completed without interruption
+  tracker$checkpoint("Full extraction")
+  cat("\nExtraction complete: ", length(completed), " suburbs, ",
+      format(length(results), big.mark = ","), " listings.\n", sep = "")
+
+}, interrupt = function(cnd) {
+  # This block runs if you press the Stop button in RStudio
+  cat("\nStopped by user. Saving progress...\n")
+  save_checkpoint(CHECKPOINT_FILE, completed, results)
+  cat("Progress saved: ", length(completed), "/", length(SUBURBS_TO_FETCH),
+      " suburbs done.\n", sep = "")
+  cat("Re-run this chunk to continue from where you stopped.\n")
+})
+```
+
+------------------------------------------------------------------------
+
+## Demonstration: Simulating a Failure and Recovering
+
+The next few chunks show exactly what happens when an extraction fails
+partway through. We deliberately trigger an error at suburb 5, inspect
+the checkpoint file that was saved, and then resume.
+
+**You do not need to run these chunks in a real extraction.** They are
+here so you can see the recovery process working before you rely on it
+for important data.
+
+### Step 1: Run until the triggered failure
+
+```{r demo-failure}
+# DEMONSTRATION: clear the checkpoint and run until a deliberate error
+
+# Clear any existing checkpoint so the demonstration starts from scratch
+if (file.exists(CHECKPOINT_FILE)) {
+  file.remove(CHECKPOINT_FILE)
+  cat("Existing checkpoint cleared for demonstration.\n")
+}
+
+# Use a separate tracker so demonstration calls are counted separately from
+# the real extraction above
+demo_tracker <- make_tracker()
+
+demo_completed <- character(0)
+demo_results   <- list()
+
+tryCatch({
+
+  for (i in seq_along(SUBURBS_TO_FETCH)) {
+    entry    <- SUBURBS_TO_FETCH[[i]]
+    suburb   <- entry[[1]]
+    state    <- entry[[2]]
+    postcode <- entry[[3]]
+    key      <- paste(suburb, postcode)
+
+    if (key %in% demo_completed) next
+
+    # DELIBERATELY TRIGGER A FAILURE at the 5th suburb
+    if (i == 5) {
+      # stop() raises an error, simulating a crash or network failure
+      stop("Simulated failure at suburb ", i, ": ", key)
+    }
+
+    cat("  [", i, "/", length(SUBURBS_TO_FETCH), "] Fetching ", key, "...\n", sep = "")
+    suburb_results <- fetch_suburb_listings(
+      suburb, state, postcode, start_date = START_DATE, tracker = demo_tracker
+    )
+    demo_results[names(suburb_results)] <- suburb_results
+    demo_completed <- c(demo_completed, key)
+    save_checkpoint(CHECKPOINT_FILE, demo_completed, demo_results)
+    cat("  [", key, "] done.\n", sep = "")
+  }
+
+}, error = function(e) {
+  cat("\nFAILURE:", conditionMessage(e), "\n")
+  cat("Checkpoint contains", length(demo_completed), "completed suburbs.\n")
+  cat("In a real scenario, this would be a network error or a crashed session.\n")
+})
+```
+
+### Step 2: Inspect the checkpoint file
+
+The chunk below reads the checkpoint file and shows what was saved
+before the failure.
+
+```{r inspect-checkpoint}
+if (file.exists(CHECKPOINT_FILE)) {
+  checkpoint_data <- jsonlite::read_json(CHECKPOINT_FILE, simplifyVector = FALSE)
+
+  cat("Checkpoint file size:", format(file.size(CHECKPOINT_FILE), big.mark = ","), "bytes\n")
+  cat("Last saved:          ",
+      if (is.null(checkpoint_data$last_updated)) "unknown" else checkpoint_data$last_updated, "\n")
+  cat("Completed suburbs:   ", paste(unlist(checkpoint_data$completed), collapse = ", "), "\n")
+  cat("Listings saved:      ", format(length(checkpoint_data$results), big.mark = ","), "\n\n")
+  cat("These suburbs will be SKIPPED when we resume.\n")
+} else {
+  cat("No checkpoint file found.\n")
+}
+```
+
+### Step 3: Resume
+
+The chunk below runs the same extraction loop. Suburbs already in the
+checkpoint are skipped immediately with a message. Only the remaining
+suburbs are fetched.
+
+```{r demo-resume}
+# Load the checkpoint from before the failure
+cp_resume       <- load_checkpoint(CHECKPOINT_FILE)
+resume_completed <- cp_resume$completed
+resume_results   <- cp_resume$results
+skipped_at_start <- length(resume_completed)
+cat("\n")
+
+tryCatch({
+
+  for (entry in SUBURBS_TO_FETCH) {
+    suburb   <- entry[[1]]
+    state    <- entry[[2]]
+    postcode <- entry[[3]]
+    key      <- paste(suburb, postcode)
+
+    if (key %in% resume_completed) {
+      cat("  [", key, "] already done -- skipping.\n", sep = "")  # no credit spent
+      next
+    }
+
+    cat("  Fetching ", key, "...\n", sep = "")
+    suburb_results <- fetch_suburb_listings(
+      suburb, state, postcode, start_date = START_DATE, tracker = tracker
+    )
+    resume_results[names(suburb_results)] <- suburb_results
+    resume_completed <- c(resume_completed, key)
+    save_checkpoint(CHECKPOINT_FILE, resume_completed, resume_results)
+    cat("  [", key, "] done.\n", sep = "")
+  }
+
+  tracker$checkpoint("Resume run")
+  cat("\nResume complete.\n")
+  cat("  Suburbs skipped (already in checkpoint):", skipped_at_start, "\n")
+  cat("  Suburbs fetched in this run:            ",
+      length(resume_completed) - skipped_at_start, "\n")
+  cat("  Total listings collected:               ",
+      format(length(resume_results), big.mark = ","), "\n")
+
+}, interrupt = function(cnd) {
+  cat("Stopped. Progress saved.\n")
+  save_checkpoint(CHECKPOINT_FILE, resume_completed, resume_results)
+})
+```
+
+------------------------------------------------------------------------
+
+## Building the Final Dataset
+
+Once all suburbs are done, load the checkpoint and build a single
+combined table. This table can be saved as a CSV file that you can open
+in Excel, Python, QGIS, or any other analysis tool.
+
+```{r build-final}
+# Load the final checkpoint
+cp_final       <- load_checkpoint(CHECKPOINT_FILE)
+final_results  <- cp_final$results
+
+if (length(final_results) > 0) {
+  # Build a table: one row per listing, using extract_fields to flatten each record
+  df_final <- final_results |>
+    map(extract_fields) |>
+    bind_rows()
+
+  # Convert date columns to proper dates for easier filtering.
+  # as.Date() with an explicit format returns NA for anything unparseable
+  # rather than stopping with an error.
+  df_final <- df_final |>
+    mutate(
+      date_sold   = as.Date(date_sold,   format = "%Y-%m-%d"),
+      date_listed = as.Date(date_listed, format = "%Y-%m-%d")
+    )
+
+  cat("Final dataset: ", format(nrow(df_final), big.mark = ","),
+      " listings across ", n_distinct(df_final$suburb), " suburbs\n\n", sep = "")
+  cat("Records per suburb:\n")
+  print(df_final |> count(suburb, sort = TRUE), n = Inf)
+  cat("\n")
+  knitr::kable(head(df_final, 5))
+} else {
+  cat("No results in checkpoint. Run the extraction loop above first.\n")
+}
+```
+
+### Export to CSV
+
+A CSV file is a plain-text spreadsheet that Excel and other tools can
+open. Run the chunk below to save your dataset. The file will appear in
+the same folder as this notebook (`training-materials-r/phase-2/`).
+
+```{r export-csv}
+# Change the filename to something meaningful for your study
+# If you save somewhere other than this folder, give the full path, using
+# forward slashes (/) or doubled backslashes (\\). A pasted Windows path with
+# single backslashes will not work.
+output_filename <- "inner_melbourne_sold_listings.csv"
+
+if (exists("df_final") && nrow(df_final) > 0) {
+  write_csv(df_final, output_filename)
+  cat("Saved:  ", output_filename, "\n")
+  cat("Rows:   ", format(nrow(df_final), big.mark = ","), "\n")
+  cat("Columns:", paste(names(df_final), collapse = ", "), "\n\n")
+  cat("You can now open this file in Excel or import it into Python, QGIS, or STATA.\n")
+} else {
+  cat("No data to save. Run the dataset-building chunk above first.\n")
+}
+```
+
+------------------------------------------------------------------------
+
+## What If Something Goes Wrong?
+
+**"No checkpoint file found" on startup:** This is normal on the first
+run. The loop will start from the beginning.
+
+**A suburb returns zero listings:** Check the suburb name and postcode
+spelling. The suburb name must match Domain exactly, including
+capitalisation. For example, "St Kilda" not "st kilda".
+
+**The final row count seems too low:** Run a density probe (from
+Notebook 1) on a few suburbs to check the expected counts, then compare
+to what is in `df_final`.
+
+**How to start completely fresh:** Delete the checkpoint file at
+`checkpoints/extraction_checkpoint.json` and re-run the extraction loop.
+You can delete it from RStudio's Files pane or from your operating
+system's file manager.
+
+**Authentication failure:** Check your `.env` file in the main
+`domain_api` folder.
+
+------------------------------------------------------------------------
+
+## What's Next: Notebook 4
+
+You can now handle the two most common challenges in large-scale
+listings extractions: areas with more than 1,000 records (cursor
+advancement) and runs that can be interrupted without losing progress
+(checkpoint recovery).
+
+**Notebook 4** covers spatial querying. Instead of searching by suburb
+name, you provide a geographic boundary file (an SA2, LGA, or any custom
+shape) and ask for all listings whose property coordinates fall inside
+it. The same cursor advancement technique from this notebook applies
+equally to spatial queries.
+
+Open `notebook-4-spatial-querying.Rmd` to continue.
+
+------------------------------------------------------------------------
+
+## Credit Summary
+
+The table below shows credits consumed in the resume run only (the
+second run after the simulated failure). Compare the "Suburbs fetched in
+this run" count to the total number of suburbs to confirm checkpoint
+skipping worked correctly.
+
+```{r credit-summary}
+tracker$summary()
+```
