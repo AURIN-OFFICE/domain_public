@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Australian Property Market Data: Intro for Researchers</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --brand: #1a6b10;
+    --accent: #e87722;
+    --text: #1a2e1a;
+    --muted: #4a6450;
+    --border: #b8d4b0;
+    --green: #1a6b10;
+    --red: #c0392b;
+    --nav-h: clamp(42px, 5.2vh, 66px);
+    --slide-gap: 0px;
+    --chrome: 40px;   /* top gap + bottom breathing room */
+    /* One width shared by the nav bar and the slides, derived from viewport HEIGHT
+       so a full 16:9 slide always fits the monitor. */
+    --deck-w: min(96vw, calc((100vh - var(--nav-h) - var(--chrome)) * 16 / 9));
+    /* Type scale keyed to viewport height, so text grows with the slide. */
+    --fs-xs:   clamp(11px, 1.65vh, 21px);
+    --fs-sm:   clamp(12px, 1.85vh, 24px);
+    --fs-base: clamp(13px, 2.05vh, 26px);
+    --fs-md:   clamp(14px, 2.20vh, 28px);
+    --fs-lead: clamp(14px, 2.30vh, 29px);
+    --fs-h3:   clamp(14px, 2.30vh, 29px);
+    --fs-h2:   clamp(20px, 4.10vh, 54px);
+    --fs-h1:   clamp(26px, 5.80vh, 78px);
+    --fs-stat: clamp(22px, 4.40vh, 56px);
+    --fs-icon: clamp(20px, 3.30vh, 42px);
+  }
+  /* True slide mode: the page itself never scrolls, so a neighbouring slide can
+     never show through. Exactly one section is displayed at a time. */
+  html, body { height: 100%; overflow: hidden; }
+  .slides-wrapper > section { display: none; }
+  .slides-wrapper > section.is-active { display: flex; }
+  html.no-smooth { scroll-behavior: auto; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #c8dfc3;
+    color: var(--text);
+    font-size: var(--fs-base);
+    line-height: 1.45;
+    padding: 14px 16px 0;
+  }
+
+  /* NAV */
+  nav {
+    position: sticky; top: 0; z-index: 100;
+    background: var(--brand);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 28px; height: var(--nav-h);
+    color: #fff; font-size: var(--fs-sm); font-weight: 600; letter-spacing: .04em;
+    border-radius: 12px 12px 0 0;
+    width: var(--deck-w); max-width: 1700px; margin: 0 auto;
+  }
+  nav .logo { font-size: var(--fs-base); opacity: .9; white-space: nowrap; }
+  nav .toc { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+  nav .toc a {
+    color: rgba(255,255,255,.75); text-decoration: none;
+    padding: .35em .8em; border-radius: 20px; font-size: var(--fs-sm);
+    transition: background .15s; white-space: nowrap;
+  }
+  nav .toc a:hover { background: rgba(255,255,255,.18); color: #fff; }
+
+  /* SLIDE WRAPPER */
+  .slides-wrapper {
+    /* Width is derived from the available viewport HEIGHT so a whole 16:9 slide
+       always fits the monitor without scrolling inside it. */
+    width: var(--deck-w);
+    max-width: 1700px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--slide-gap);
+  }
+
+  /* BASE SLIDE CARD */
+  .slide {
+    background: #fff;
+    border-radius: 0 0 14px 14px;
+    box-shadow: 0 6px 28px rgba(0,0,0,.10);
+    padding: clamp(18px, 2.4vh, 34px) clamp(28px, 3.4vw, 56px) clamp(30px, 4vh, 46px);
+    max-height: calc(100vh - var(--nav-h) - 26px);
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .slides-wrapper > section { border-radius: 0 0 14px 14px; }
+
+  /* TITLE SLIDE */
+  .slide-title {
+    background: linear-gradient(135deg, #0f4208 0%, #1a6b10 100%);
+    color: #fff;
+    border-radius: 0 0 14px 14px;
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .slide-title h1 { font-size: var(--fs-h1); line-height: 1.15; font-weight: 700; }
+  .slide-title .sub { margin-top: .6em; font-size: var(--fs-lead); max-width: 42em; opacity: .82; max-width: 640px; }
+  .slide-title .meta { margin-top: 1em; font-size: var(--fs-xs); opacity: .6; letter-spacing: .05em; text-transform: uppercase; }
+  .badge {
+    display: inline-block; margin-top: 14px;
+    background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.3);
+    border-radius: 24px; padding: .35em 1em; font-size: var(--fs-sm); font-weight: 600; letter-spacing: .05em;
+  }
+
+  /* --- Fill the slide -------------------------------------------------
+     A slide is a flex column: the heading keeps its natural size and the main
+     content block absorbs the remaining height, so nothing floats in the middle
+     of an otherwise empty card. */
+  .slide > .two-col,
+  .slide > .cards,
+  .slide > .timeline,
+  .slide > .chart-wrap,
+  .slide > .yn-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .two-col { align-items: stretch; }
+  .two-col > div:not(.card) { display: flex; flex-direction: column; justify-content: center; gap: clamp(8px, 1.4vh, 20px); min-height: 0; }
+  .cards { align-content: center; }
+  /* icon sits beside the heading, body text spans the full width below */
+  .card {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-areas: "icon title" "body body";
+    align-items: center;
+    align-content: center;
+    column-gap: .45em;
+  }
+  .card .icon  { grid-area: icon; }
+  .card h3     { grid-area: title; margin-bottom: 0; }
+  .card p      { grid-area: body; margin-top: .5em; }
+  .metrics { flex: 0 0 auto; display: flex; flex-direction: column; gap: clamp(2px, .5vh, 8px); }
+  .timeline { display: flex; flex-direction: column; justify-content: center; gap: clamp(6px, 1.4vh, 20px); }
+  .yn-wrap { overflow: auto; display: flex; align-items: center; }
+  .yn-table { height: auto; }
+
+
+  /* ---- PRINT / PDF ------------------------------------------------------
+     The deck normally shows one slide at a time. For export every slide is
+     revealed at a fixed 16:9 page size, so each becomes one PDF page. The
+     .print-all class applies the same geometry on screen, which lets the
+     charts be sized correctly *before* the PDF is rasterised. */
+  html.print-all, html.print-all body { height: auto; overflow: visible; background: #fff; padding: 0; }
+  html.print-all nav { display: none; }
+  html.print-all .slides-wrapper { width: auto; max-width: none; gap: 0; }
+  html.print-all .slides-wrapper > section {
+    display: flex !important;
+    width: 297mm; height: 167mm; max-height: none;
+    aspect-ratio: auto; border-radius: 0; box-shadow: none;
+    break-after: page; page-break-after: always;
+  }
+  html.print-all .slides-wrapper > section:last-child { break-after: auto; page-break-after: auto; }
+
+  @media print {
+    @page { size: 297mm 167mm; margin: 0; }
+    html, body { height: auto; overflow: visible; background: #fff; padding: 0; }
+    nav { display: none; }
+    .slides-wrapper { width: auto; max-width: none; gap: 0; }
+    .slides-wrapper > section {
+      display: flex !important;
+      width: 297mm; height: 167mm; max-height: none;
+      aspect-ratio: auto; border-radius: 0; box-shadow: none;
+      break-after: page; page-break-after: always;
+    }
+    .slides-wrapper > section:last-child { break-after: auto; page-break-after: auto; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+
+  /* SLIDE HEADINGS */
+  .slide-num {
+    position: absolute; right: clamp(18px, 2.2vw, 34px); bottom: 12px;
+    font-size: var(--fs-xs); font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--accent); opacity: .7; margin: 0; pointer-events: none;
+  }
+  h2 { font-size: var(--fs-h2); font-weight: 700; line-height: 1.15; margin-bottom: .3em; }
+  h3 { font-size: var(--fs-h3); font-weight: 600; margin-bottom: .35em; }
+  p { margin-bottom: 8px; }
+  p.lead { font-size: var(--fs-lead); color: var(--muted); margin-bottom: .5em; }
+  /* Breathing room under the subtitle on slides without a figure. Chart slides
+     are deliberately excluded so the plot keeps its height. */
+  p.lead + .two-col,
+  p.lead + .cards,
+  p.lead + .timeline,
+  p.lead + .yn-wrap { margin-top: clamp(10px, 2vh, 30px); }
+
+  /* CARDS */
+  .cards.one-col { grid-template-columns: 1fr !important; }
+  .cards { display: grid; gap: clamp(10px, 1.3vh, 18px); grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-top: 4px; }
+  .card {
+    background: #f4f9f2; border: 1px solid var(--border);
+    border-radius: 8px; padding: clamp(14px, 1.9vh, 26px) clamp(14px, 1.4vw, 22px);
+  }
+  .card .icon { font-size: calc(var(--fs-h3) * 1.15); line-height: 1; margin: 0; }
+  .card h3 { font-size: var(--fs-md); }
+  .card p { font-size: var(--fs-sm); color: var(--muted); margin-bottom: 0; }
+
+  /* STAT PILLS */
+  .stats-row { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+  .stat {
+    background: #f4f9f2; border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 18px; min-width: 120px;
+  }
+  .stat .val { font-size: var(--fs-stat); font-weight: 700; color: var(--brand); }
+  .stat .lbl { font-size: var(--fs-xs); color: var(--muted); margin-top: 2px; }
+
+  /* TWO-COLUMN */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(18px, 2vw, 34px); align-items: start; }
+  @media (max-width: 640px) { .two-col { grid-template-columns: 1fr; } }
+
+  /* METRIC LIST */
+  .metrics { list-style: none; margin: 6px 0; }
+  .metrics li { display: flex; align-items: flex-start; gap: 10px; padding: clamp(3px, .55vh, 9px) 0; border-bottom: 1px solid var(--border); font-size: var(--fs-sm); }
+  .metrics li:last-child { border-bottom: none; }
+  .metrics li .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--brand); margin-top: 5px; flex-shrink: 0; }
+
+  /* CHART */
+  .slide > p:last-of-type { font-size: var(--fs-sm); margin-bottom: 0; }
+  .chart-wrap {
+    background: #f4f9f2; border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,.05);
+    margin: 8px 0;
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .chart-wrap img { width: 100%; height: auto; display: block; max-height: 240px; object-fit: contain; }
+    .chart-wrap .fig { width: 100%; flex: 1 1 auto; min-height: 0; }
+  .chart-wrap .fig * { outline: none; }
+  .chart-wrap .fig .plotly-graph-div { width: 100% !important; height: 100% !important; }
+  .chart-caption { flex: 0 0 auto; }
+  .chart-caption { padding: .5em 1.2em; font-size: var(--fs-xs); line-height: 1.4; color: var(--muted); border-top: 1px solid var(--border); background: #ecf5e8; }
+
+  /* YES/NO TABLE */
+  .yn-table { width: 100%; border-collapse: collapse; margin-top: .6em; font-size: var(--fs-sm); }
+  .yn-table th { background: var(--brand); color: #fff; padding: clamp(4px, .7vh, 10px) 12px; text-align: left; font-weight: 600; }
+  .yn-table td { padding: clamp(2px, .45vh, 7px) 12px; border-bottom: 1px solid var(--border); line-height: 1.3; }
+  .yn-table tr:last-child td { border-bottom: none; }
+  .yn-table tr:nth-child(even) td { background: #f4f9f2; }
+  .yes     { color: var(--green); font-weight: 700; }
+  .no      { color: var(--red);   font-weight: 700; }
+  .partial { color: var(--accent); font-weight: 700; }
+
+  /* TIMELINE */
+  .timeline { margin: 0; }
+  .tl-row { display: flex; align-items: flex-start; gap: 14px; padding: clamp(4px, .7vh, 10px) 0; border-bottom: 1px solid var(--border); }
+  .tl-row:last-child { border-bottom: none; }
+  .tl-year { font-weight: 700; color: var(--brand); min-width: 7em; font-size: var(--fs-sm); }
+  .tl-detail { font-size: var(--fs-sm); color: var(--muted); }
+
+  /* CALLOUT */
+  .callout {
+    border-left: 4px solid var(--accent); background: #fff8f2;
+    border-radius: 0 8px 8px 0; padding: .8em 1.1em; margin: .7em 0; font-size: var(--fs-sm);
+  }
+  .callout strong { color: var(--accent); }
+
+  /* FOOTER SLIDE */
+  .slide-footer {
+    aspect-ratio: 16 / 9;
+    max-height: calc(100vh - var(--nav-h) - 26px);
+    position: relative;
+    background: var(--brand); color: #fff;
+    text-align: center; padding: 36px 5vw;
+    border-radius: 14px;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+  }
+  .slide-footer h2 { color: #fff; font-size: var(--fs-h2); }
+  .slide-footer p { color: rgba(255,255,255,.8); font-size: var(--fs-lead); max-width: 34em; margin: .9em auto 0; }
+</style>
+<script charset="utf-8" src="https://cdn.plot.ly/plotly-3.6.0.min.js" integrity="sha256-QaOVwtVY0T02VaHrr6pnoHLCwayMJp4O5n4YyaE3rJk=" crossorigin="anonymous"></script>
+</head>
+<body>
+
+<nav>
+  <span class="logo">Domain API: Researcher Intro</span>
+  <div class="toc">
+    <a href="#s1">Intro</a>
+    <a href="#s3">Data Types</a>
+    <a href="#s4">Suburb Stats</a>
+    <a href="#s5">Listings</a>
+    <a href="#s6">Charts</a>
+    <a href="#s10">Coverage</a>
+    <a href="#s12">Access</a>
+    <a href="#s13">Limits</a>
+  </div>
+</nav>
+
+<div class="slides-wrapper">
+
+<!-- SLIDE 1: TITLE -->
+<section class="slide slide-title" id="s1">
+  <div class="meta">Australian Property Market Data · Researcher Briefing</div>
+  <h1>What Is the Domain Dataset,<br>and What Can You Do With It?</h1>
+  <p class="sub">An overview of the Domain property dataset: what it contains, how it is structured, and what research it can support.</p>
+  <div class="badge">Domain API via AURIN (Australian Urban Research Infrastructure Network)</div>
+</section>
+
+
+<!-- SLIDE 2: WHAT IS DOMAIN -->
+<section class="slide" id="s2">
+  <div class="slide-num"></div>
+  <h2>Where does this data come from, and what is in it?</h2>
+  <p class="lead">Domain.com.au is one of Australia's largest property listings websites. Agents post listings there and sale results are recorded, creating a continuously updated view of the market that researchers reach through <strong>AURIN</strong>.</p>
+
+  <div class="two-col">
+    <div>
+      <ul class="metrics">
+        <li><span class="dot"></span><span>Properties currently for sale or rent</span></li>
+        <li><span class="dot"></span><span>Properties recently sold, with price and date</span></li>
+        <li><span class="dot"></span><span>Market conditions in each suburb over time</span></li>
+      </ul>
+      <div class="callout"><strong>Not a one-time snapshot.</strong> Unlike a static dataset delivered as a file, this is a <strong>live query service</strong>. Questions are sent and answered in real time, so the data always reflects current market activity.</div>
+    </div>
+    <div>
+      <div class="cards one-col">
+        <div class="card">
+          <div class="icon">&#128202;</div>
+          <h3>Suburb-Level Summaries</h3>
+          <p>Market snapshots for each suburb: typical prices, how fast homes sell, rental demand, auction activity. Good for <strong>trends, comparisons across areas, and policy analysis</strong>.</p>
+        </div>
+        <div class="card">
+          <div class="icon">&#128205;</div>
+          <h3>Individual Property Records</h3>
+          <p>Details on specific homes: bedrooms, sold price, date, description, coordinates. Useful for <strong>fine-grained analysis, spatial modelling, or a single street</strong>.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout"><strong>Rule of thumb:</strong> if your question is about a suburb or area, use the summaries; if it is about specific properties or transactions, use the individual listings.</div>
+</section>
+
+
+<!-- SLIDE 3: TWO TYPES -->
+
+
+
+<!-- SLIDE 4: SUBURB STATS -->
+<section class="slide" id="s4">
+  <div class="slide-num"></div>
+  <h2>Suburb-Level Summaries: What's in Them?</h2>
+  <p class="lead">Snapshots per suburb at quarterly, half-yearly, and annual intervals, over a rolling window of roughly the last decade. Houses and units are queried separately.</p>
+
+  <div class="two-col">
+    <div>
+      <h3>What each period record contains</h3>
+      <ul class="metrics">
+        <li><span class="dot"></span><span><strong>Median sold price:</strong> the middle sale price for the period</span></li>
+        <li><span class="dot"></span><span><strong>Number of sales:</strong> how many properties actually sold</span></li>
+        <li><span class="dot"></span><span><strong>Days on market:</strong> how long homes typically sat before selling</span></li>
+        <li><span class="dot"></span><span><strong>Auction clearance rate:</strong> share of auctions that resulted in a sale</span></li>
+        <li><span class="dot"></span><span><strong>Median asking rent:</strong> typical advertised rental price</span></li>
+        <li><span class="dot"></span><span><strong>Rental yield:</strong> annual rent as a percentage of property value</span></li>
+        <li><span class="dot"></span><span><strong>Price distribution:</strong> 5th, 25th, 75th, 95th percentile prices</span></li>
+        <li><span class="dot"></span><span><strong>Discount rate:</strong> how much sellers typically dropped their asking price</span></li>
+      </ul>
+    </div>
+    <div>
+      <div class="card" style="background:#f0fbf2; border-color:#afd5b4;">
+        <div class="icon">✅</div>
+        <h3>Best for questions like...</h3>
+        <p style="font-size:var(--fs-sm)">"How have median house prices in Fitzroy changed over the last decade?"<br><br>"Which inner-Melbourne suburbs had the fastest-selling properties last year?"<br><br>"How did COVID affect rental demand in coastal areas?"</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- SLIDE 5: LISTINGS -->
+<section class="slide" id="s5">
+  <div class="slide-num"></div>
+  <h2>Individual Property Records: What's in Them?</h2>
+  <p class="lead">Each record describes one property at one point in time (a sale, a rental listing, or an active for-sale listing).</p>
+
+  <div class="two-col">
+    <div>
+      <h3>What each property record contains</h3>
+      <ul class="metrics">
+        <li><span class="dot"></span><span><strong>Address and coordinates:</strong> exact location (lat/lon)</span></li>
+        <li><span class="dot"></span><span><strong>Property type:</strong> house, apartment, townhouse, etc.</span></li>
+        <li><span class="dot"></span><span><strong>Size:</strong> bedrooms, bathrooms, car spaces, land area</span></li>
+        <li><span class="dot"></span><span><strong>Price or rent:</strong> sold price, asking price, or rental amount</span></li>
+        <li><span class="dot"></span><span><strong>Sold date:</strong> when the transaction occurred</span></li>
+        <li><span class="dot"></span><span><strong>Sale method:</strong> auction, private treaty, or expression of interest</span></li>
+        <li><span class="dot"></span><span><strong>Agency:</strong> which real estate agency handled the sale</span></li>
+        <li><span class="dot"></span><span><strong>Features and amenities:</strong> tags declared by the advertiser (e.g. swimming pool, air conditioning, ensuite, balcony, solar panels, water views, pet-friendly) across 41 possible attributes</span></li>
+      </ul>
+    </div>
+    <div>
+      <div class="card" style="background:#fffbf0; border-color:#f0d580;">
+        <div class="icon">⚠️</div>
+        <h3>Heads up on coverage</h3>
+        <p style="font-size:var(--fs-sm)">Individual records are <strong>densely available from 2018 onwards</strong>. Earlier years (2000-2018) exist but the data might be sparse. Do not rely on pre-2018 completeness for research that needs every transaction.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- SLIDE 6: CHART 1 -->
+<section class="slide" id="s6">
+  <div class="slide-num"></div>
+  <h2>Example: Price Trends Across Australian Markets</h2>
+  <p class="lead">All markets indexed to Q1 2018, so they can be compared regardless of their absolute price levels. Capitals are solid, coastal lifestyle markets dashed.</p>
+
+  <div class="chart-wrap">
+    <div class="fig"><div id="24796907-d351-47e7-98e5-d54e9949cec1" class="plotly-graph-div" style="height:100%; width:100%;"></div>            <script>                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("24796907-d351-47e7-98e5-d54e9949cec1")) {                    Plotly.newPlot(                        "24796907-d351-47e7-98e5-d54e9949cec1",                        [{"hovertemplate":"%{fullData.name}: %{y:.0f}\u003cextra\u003e\u003c\u002fextra\u003e","line":{"color":"#1f77b4","dash":"solid","width":2.5},"mode":"lines","name":"Melbourne","x":["2018-02-01T00:00:00","2018-05-01T00:00:00","2018-08-01T00:00:00","2018-11-01T00:00:00","2019-02-01T00:00:00","2019-05-01T00:00:00","2019-08-01T00:00:00","2019-11-01T00:00:00","2020-02-01T00:00:00","2020-05-01T00:00:00","2020-08-01T00:00:00","2020-11-01T00:00:00","2021-02-01T00:00:00","2021-05-01T00:00:00","2021-08-01T00:00:00","2021-11-01T00:00:00","2022-02-01T00:00:00","2022-05-01T00:00:00","2022-08-01T00:00:00","2022-11-01T00:00:00","2023-02-01T00:00:00","2023-05-01T00:00:00","2023-08-01T00:00:00","2023-11-01T00:00:00","2024-02-01T00:00:00","2024-05-01T00:00:00","2024-08-01T00:00:00","2024-11-01T00:00:00","2025-02-01T00:00:00","2025-05-01T00:00:00","2025-08-01T00:00:00","2025-11-01T00:00:00","2026-02-01T00:00:00","2026-05-01T00:00:00"],"y":{"dtype":"f8","bdata":"AAAAAAAAAAC67pTXJb8JQLz\u002fSD1rjvm\u002fKH3OSCyDDcCIyqGAgVgfwOBiFxu7WSDAutDQ9hPAE8D7UK4\u002fRFj6v5heFvEJpNK\u002fAAAAAAAAAACUou1k+EXgP+ZZN5ginwVAhOy4Nr+wEUBEcmHQq1cnQCallFJKKSlAepLcuJj4M0BuoN00uUAyQDaeQ\u002f+KFDRAFiw17kS7MEDu+HtQr44qQJaaXhjEwi9AEIvuHOIOLkAIdpCAypQxQFibm\u002fhNWDNA5f5JsogpLUD6su1RZJsxQFiGvIecmixAnkM0uG84MEDjjwD\u002fQMAuQNLxggx7vzNAXO7wUH0eLkC\u002fC1qyrFY2QLrT6k6rOzJAcvtD5\u002f5gMkA="},"type":"scatter"},{"hovertemplate":"%{fullData.name}: %{y:.0f}\u003cextra\u003e\u003c\u002fextra\u003e","line":{"color":"#ff7f0e","dash":"solid","width":2.5},"mode":"lines","name":"Sydney","x":["2018-02-01T00:00:00","2018-05-01T00:00:00","2018-08-01T00:00:00","2018-11-01T00:00:00","2019-02-01T00:00:00","2019-05-01T00:00:00","2019-08-01T00:00:00","2019-11-01T00:00:00","2020-02-01T00:00:00","2020-05-01T00:00:00","2020-08-01T00:00:00","2020-11-01T00:00:00","2021-02-01T00:00:00","2021-05-01T00:00:00","2021-08-01T00:00:00","2021-11-01T00:00:00","2022-02-01T00:00:00","2022-05-01T00:00:00","2022-08-01T00:00:00","2022-11-01T00:00:00","2023-02-01T00:00:00","2023-05-01T00:00:00","2023-08-01T00:00:00","2023-11-01T00:00:00","2024-02-01T00:00:00","2024-05-01T00:00:00","2024-08-01T00:00:00","2024-11-01T00:00:00","2025-02-01T00:00:00","2025-05-01T00:00:00","2025-08-01T00:00:00","2025-11-01T00:00:00","2026-02-01T00:00:00","2026-05-01T00:00:00"],"y":{"dtype":"f8","bdata":"AAAAAAAAAAAEFl\u002fxFV8BQOAN9ND\u002fkMu\u002f07xrMZrMC8AMVhRdDukgwGRgPKqcYxvAvlw7MNcOHcAccxBw67Ppv2lB0UqJDvo\u002fAP+KNlbK3j+gmZmZmZnJP7kiaDip+xBAwEndl8dWJEAAAAAAAAA4QEhwH8F9xDlAbfd3cNkbQEAzSvyMEj9BQHTRRRddNENATn2mrfE3OUAugoaTui81QAAAAAAAADpAK3v8K9pYPUA0P4tinHJBQDUzMzMzMz9AxMPDw8MDQkApsfwx8LVEQI4SP6PEz0VAOEI\u002fQJUjRUCfz9y3hXhHQAAAAAAAXkpAKDpsTVBxTEBuHqH6TNtOQMbFXgE6Ak1AAAAAAACKS0A="},"type":"scatter"},{"hovertemplate":"%{fullData.name}: %{y:.0f}\u003cextra\u003e\u003c\u002fextra\u003e","line":{"color":"#2ca02c","dash":"solid","width":2.5},"mode":"lines","name":"Brisbane","x":["2018-02-01T00:00:00","2018-05-01T00:00:00","2018-08-01T00:00:00","2018-11-01T00:00:00","2019-02-01T00:00:00","2019-05-01T00:00:00","2019-08-01T00:00:00","2019-11-01T00:00:00","2020-02-01T00:00:00","2020-05-01T00:00:00","2020-08-01T00:00:00","2020-11-01T00:00:00","2021-02-01T00:00:00","2021-05-01T00:00:00","2021-08-01T00:00:00","2021-11-01T00:00:00","2022-02-01T00:00:00","2022-05-01T00:00:00","2022-08-01T00:00:00","2022-11-01T00:00:00","2023-02-01T00:00:00","2023-05-01T00:00:00","2023-08-01T00:00:00","2023-11-01T00:00:00","2024-02-01T00:00:00","2024-05-01T00:00:00","2024-08-01T00:00:00","2024-11-01T00:00:00","2025-02-01T00:00:00","2025-05-01T00:00:00","2025-08-01T00:00:00","2025-11-01T00:00:00","2026-02-01T00:00:00","2026-05-01T00:00:00"],"y":{"dtype":"f8","bdata":"AAAAAAAAAACYIbW6EAL0P+R+gDS9V\u002fS\u002fiLB3TA3s3b8o\u002fAFagt8KwIk\u002fYbkO1gnAtolBAmlx+r84FHBoPtffv9Af8Af8Af+\u002fUOI3OQJP9T8gvWNqYO\u002foP2fjUtvZwyFAtgBLDutTJ0AxZ8wZc8Y0QJhpcRl32TpAD6MpDcdzR0CGOCs\u002fIc5IQBwgpLivZUxALrnIH9SSSUDL3abZwtxFQP\u002f\u002f\u002f\u002f\u002f\u002f\u002f0VAOL3pTW96SUABAAAAAABOQPUpVdzQ11BAO0Ni3s6QT0Agg\u002fMxOB9UQMAm6ugXHlVAVw3a\u002fz5pVEAOJFphcyBVQGDwWN6rLVhAAZHhXgWzWUA4velNb3pcQFhmG2qdZl9AmNGCpdUuX0A="},"type":"scatter"},{"hovertemplate":"%{fullData.name}: %{y:.0f}\u003cextra\u003e\u003c\u002fextra\u003e","line":{"color":"#d62728","dash":"solid","width":2.5},"mode":"lines","name":"Perth","x":["2018-02-01T00:00:00","2018-05-01T00:00:00","2018-08-01T00:00:00","2018-11-01T00:00:00","2019-02-01T00:00:00","2019-05-01T00:00:00","2019-08-01T00:00:00","2019-11-01T00:00:00","2020-02-01T00:00:00","2020-05-01T00:00:00","2020-08-01T00:00:00","2020-11-01T00:00:00","2021-02-01T00:00:00","2021-05-01T00:00:00","2021-08-01T00:00:00","2021-11-01T00:00:00","2022-02-01T00:00:00","2022-05-01T00:00:00","2022-08-01T00:00:00","2022-11-01T00:00:00","2023-02-01T00:00:00","2023-05-01T00:00:00","2023-08-01T00:00:00","2023-11-01T00:00:00","2024-02-01T00:00:00","2024-05-01T00:00:00","2024-08-01T00:00:00","2024-11-01T00:00:00","2025-02-01T00:00:00","2025-05-01T00:00:00","2025-08-01T00:00:00","2025-11-01T00:00:00","2026-02-01T00:00:00","2026-05-01T00:00:00"],"y":{"dtype":"f8","bdata":"AAAAAAAAAADEtzQQW8znP7KErxmmuhLAvB1TA3vH5L\u002f4FJcMwToawL7lDl\u002f8+hPAofYTv9EWC8DSuhsZHFsewJHand5IwBLAZWlpaWlpDcD2T1h9ZLr1P4aWZiEPZBVAqCf1JfuQIED0H4cWB+UoQEko63EdsypANZyBtajuLUBXTepjYzgyQI4uuuiiSzdA\u002fExb4+\u002fmNkCHqomTgeY4QHDbtm3bNjdAjF+9nNT4O0AsALr9sJ4\u002fQNIUCFlO1ERA7Kwfb5JOS0CmN73pTS9RQD99+vTpV1BAzEnuS9nLUUBBL8Orgn5SQBjyZr0gJFJAfkKclZ94VUD0PM\u002fzPE9aQCQ\u002fSQX9iF5A09LS0tLqXUA="},"type":"scatter"},{"hovertemplate":"%{fullData.name}: %{y:.0f}\u003cextra\u003e\u003c\u002fextra\u003e","line":{"color":"#9467bd","dash":"solid","width":2.5},"mode":"lines","name":"Adelaide","x":["2018-02-01T00:00:00","2018-05-01T00:00:00","2018-08-01T00:00:00","2018-11-01T00:00:00","2019-02-01T00:00:00","2019-05-01T00:00:00","2019-08-01T00:00:00","2019-11-01T00:00:00","2020-02-01T00:00:00","2020-05-01T00:00:00","2020-08-01T00:00:00","2020-11-01T00:00:00","2021-02-01T00:00:00","2021-05-01T00:00:00","2021-08-01T00:00:00","2021-11-01T00:00:00","2022-02-01T00:00:00","2022-05-01T00:00:00","2022-08-01T00:00:00","2022-11-01T00:00:00","2023-02-01T00:00:00","2023-05-01T00:00:00","2023-08-01T00:00:00","2023-11-01T00:00:00","2024-02-01T00:00:00","2024-05-01T00:00:00","2024-08-01T00:00:00","2024-11-01T00:00:00","2025-02-01T00:00:00","2025-05-01T00:00:00","2025-08-01T00:00:00","2025-11-01T00:00:00","2026-02-01T00:00:00","2026-05-01T00:00:00"],"y":{"dtype":"f8","bdata":"AAAAAAAAAAAAthU4Zp3Wv45sGP8ScQlABEUOzi5c7b8gMqtRxKHDP4DCeMUSsgzA1bZt27ZtD8CIk0022WTTvwqfdYMp8vm\u002f2BRL11bg6L8E0oFuDhHwPwYAAAAAAAhAoG3btm3bBkC66U1vetMmQCwRcSG4qDRApkCtXylQP0D\u002f\u002f\u002f\u002f\u002f\u002f\u002f9FQJIkSZIkSUNAx\u002f7o2N5FR0DNzMzMzMxIQFDmWUWN3UhAk\u002fZBMqCeR0DN+xSXDMFDQEFnLpZIIlBAN73pTW96UkDFTuzEThxTQDuxEzuxE1dAeNFMoeTjVkD7EUEcHbJaQAEAAAAAAF5AKS4ZgnU0WkDETuzETvxZQJC5uSXEQFtApX6cKZYuYUA="},"type":"scatter"},{"hovertemplate":"%{fullData.name}: %{y:.0f}\u003cextra\u003e\u003c\u002fextra\u003e","line":{"color":"#bcbd22","dash":"solid","width":2.5},"mode":"lines","name":"Canberra","x":["2018-02-01T00:00:00","2018-05-01T00:00:00","2018-08-01T00:00:00","2018-11-01T00:00:00","2019-02-01T00:00:00","2019-05-01T00:00:00","2019-08-01T00:00:00","2019-11-01T00:00:00","2020-02-01T00:00:00","2020-05-01T00:00:00","2020-08-01T00:00:00","2020-11-01T00:00:00","2021-02-01T00:00:00","2021-05-01T00:00:00","2021-08-01T00:00:00","2021-11-01T00:00:00","2022-02-01T00:00:00","2022-05-01T00:00:00","2022-08-01T00:00:00","2022-11-01T00:00:00","2023-02-01T00:00:00","2023-05-01T00:00:00","2023-08-01T00:00:00","2023-11-01T00:00:00","2024-02-01T00:00:00","2024-05-01T00:00:00","2024-08-01T00:00:00","2024-11-01T00:00:00","2025-02-01T00:00:00","2025-05-01T00:00:00","2025-08-01T00:00:00","2025-11-01T00:00:00","2026-02-01T00:00:00","2026-05-01T00:00:00"],"y":{"dtype":"f8","bdata":"AAAAAAAAAACqLV3Gl7QcQBPzbvU9QxRAE\u002fNu9T1DFEC+CejtRW4RQGSBC1zgAgFAIDQNxpoRGEBErEuP+bsiQAbzbvU9QyRAZJZplmmWIUDghuwKS0YiQLtGuUa5RjFApkCtXylQP0Bt5TbpxJpCQOfXHnJZMUdAZ59DaoLxTkBualOb2tRNQHJuP5oksE9AOi+jAUhLTEBW3zNEKghKQPfP0+sBDElAbFkDjit1RkBjJ3ZiJ\u002fZJQGQ7mxQAqEVArKqqqqpqRECXdGRiE79KQHIuancz2khAAAAAAAAASUBclRTkeVFJQPT0egDDwk1ADtFROzYHTUC91fcMkQpQQFqfwr0c6VFAEmdTJp59TUA="},"type":"scatter"},{"hovertemplate":"%{fullData.name}: %{y:.0f}\u003cextra\u003e\u003c\u002fextra\u003e","line":{"color":"#8c564b","dash":"dash","width":1.8},"mode":"lines","name":"Sunshine Coast","x":["2018-02-01T00:00:00","2018-05-01T00:00:00","2018-08-01T00:00:00","2018-11-01T00:00:00","2019-02-01T00:00:00","2019-05-01T00:00:00","2019-08-01T00:00:00","2019-11-01T00:00:00","2020-02-01T00:00:00","2020-05-01T00:00:00","2020-08-01T00:00:00","2020-11-01T00:00:00","2021-02-01T00:00:00","2021-05-01T00:00:00","2021-08-01T00:00:00","2021-11-01T00:00:00","2022-02-01T00:00:00","2022-05-01T00:00:00","2022-08-01T00:00:00","2022-11-01T00:00:00","2023-02-01T00:00:00","2023-05-01T00:00:00","2023-08-01T00:00:00","2023-11-01T00:00:00","2024-02-01T00:00:00","2024-05-01T00:00:00","2024-08-01T00:00:00","2024-11-01T00:00:00","2025-02-01T00:00:00","2025-05-01T00:00:00","2025-08-01T00:00:00","2025-11-01T00:00:00","2026-02-01T00:00:00","2026-05-01T00:00:00"],"y":{"dtype":"f8","bdata":"AAAAAAAAAACwrClrypoCQNFQXkN5DRVAkCxkIQtZ+D\u002fU19fX19f3P\u002fBW9jmkJvg\u002fuixiHfBR+z9Fb3rTm94UQC73MtwdRh1A20D2BvveIUDgP7SFy+InQBgrR5YvkTFAXmK+dkSvOUCB23C8SBNCQPvZBQqaLEZAJmyD4FQmUECRPch\u002fMKZSQFwCeNgnmlJAusAacHrAUEBMS2QRtwNQQNuzKiNKeU5Aq6qqqqqqUEAsZrgf0SpRQJpLhCcFyVFAJBcrSwf9U0A2qOHapclWQLa6fECdulZA\u002fQqxeeE+VkBhinzWDaZWQGRQTbu511dAGsprKK+hW0AiJlcQkytfQML\u002f+alWx19A1g2myGfdYEA="},"type":"scatter"},{"hovertemplate":"%{fullData.name}: %{y:.0f}\u003cextra\u003e\u003c\u002fextra\u003e","line":{"color":"#e377c2","dash":"dash","width":1.8},"mode":"lines","name":"Gold Coast","x":["2018-02-01T00:00:00","2018-05-01T00:00:00","2018-08-01T00:00:00","2018-11-01T00:00:00","2019-02-01T00:00:00","2019-05-01T00:00:00","2019-08-01T00:00:00","2019-11-01T00:00:00","2020-02-01T00:00:00","2020-05-01T00:00:00","2020-08-01T00:00:00","2020-11-01T00:00:00","2021-02-01T00:00:00","2021-05-01T00:00:00","2021-08-01T00:00:00","2021-11-01T00:00:00","2022-02-01T00:00:00","2022-05-01T00:00:00","2022-08-01T00:00:00","2022-11-01T00:00:00","2023-02-01T00:00:00","2023-05-01T00:00:00","2023-08-01T00:00:00","2023-11-01T00:00:00","2024-02-01T00:00:00","2024-05-01T00:00:00","2024-08-01T00:00:00","2024-11-01T00:00:00","2025-02-01T00:00:00","2025-05-01T00:00:00","2025-08-01T00:00:00","2025-11-01T00:00:00","2026-02-01T00:00:00","2026-05-01T00:00:00"],"y":{"dtype":"f8","bdata":"AAAAAAAAAACIVJh4P3LavyyykIUsZPG\u002f4LGHaH+V3T8IKyUbU0XyP1h+QpyVnwDAeOM4juM49j8qYbmnEZYLQPGKwCsCrxNARgW\u002fEQOc8j+ebEDcuGwfQPgI7iO4jyhAG3pSfSXzN0B30xRotjZAQKKxPjTWh0BACu4juI\u002fgSUA5i+ksprNOQLiP4D6Ce05Ai+ksprOYTEDq9GW8On1LQODAgQMHDktAAQAAAAAATkCXwzGXIENQQE1vetObHlFAIeyCsAsCUkBt27Zt27ZUQFVVVVVV1VRAcrD8fzv9VkA282HZfhBXQOaeRlju6VhAYpBwaYbPWkDrydbKjI9cQDQJgQqmil9A0AHovWtsYEA="},"type":"scatter"}],                        {"template":{"data":{"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"choropleth":[{"colorbar":{"outlinewidth":0,"ticks":""},"type":"choropleth"}],"contourcarpet":[{"colorbar":{"outlinewidth":0,"ticks":""},"type":"contourcarpet"}],"contour":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"contour"}],"heatmap":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"heatmap"}],"histogram2dcontour":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"histogram2dcontour"}],"histogram2d":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"histogram2d"}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"mesh3d":[{"colorbar":{"outlinewidth":0,"ticks":""},"type":"mesh3d"}],"parcoords":[{"line":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"parcoords"}],"pie":[{"automargin":true,"type":"pie"}],"scatter3d":[{"line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatter3d"}],"scattercarpet":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattercarpet"}],"scattergeo":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattergeo"}],"scattergl":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattergl"}],"scattermapbox":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattermapbox"}],"scattermap":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattermap"}],"scatterpolargl":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatterpolargl"}],"scatterpolar":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatterpolar"}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"scatterternary":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatterternary"}],"surface":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"surface"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}]},"layout":{"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"autotypenumbers":"strict","coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]],"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]},"colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"geo":{"bgcolor":"white","lakecolor":"white","landcolor":"#E5ECF6","showlakes":true,"showland":true,"subunitcolor":"white"},"hoverlabel":{"align":"left"},"hovermode":"closest","mapbox":{"style":"light"},"margin":{"b":54,"l":62,"r":24,"t":26},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"bgcolor":"#E5ECF6","radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","gridwidth":2,"linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white"},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","gridwidth":2,"linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white"},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","gridwidth":2,"linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white"}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"ternary":{"aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"bgcolor":"#E5ECF6","caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"title":{"x":0.5,"font":{"size":17},"xanchor":"center"},"xaxis":{"automargin":true,"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","zerolinewidth":2},"yaxis":{"automargin":true,"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","zerolinewidth":2},"legend":{"bgcolor":"rgba(255,255,255,0)","borderwidth":0,"x":1.02,"xanchor":"left","y":1,"yanchor":"top"}}},"shapes":[{"line":{"color":"#888","dash":"dot"},"opacity":0.7,"type":"line","x0":0,"x1":1,"xref":"x domain","y0":0,"y1":0,"yref":"y"},{"fillcolor":"grey","line":{"width":0},"opacity":0.07,"type":"rect","x0":"2020-03-01","x1":"2020-12-01","xref":"x","y0":0,"y1":1,"yref":"y domain"},{"line":{"color":"#555","dash":"dot"},"opacity":0.8,"type":"line","x0":"2022-05-01","x1":"2022-05-01","xref":"x","y0":0,"y1":1,"yref":"y domain"}],"annotations":[{"showarrow":false,"text":"Q1 2018 (0%)","x":1,"xanchor":"right","xref":"x domain","y":0,"yanchor":"top","yref":"y"},{"font":{"size":10},"showarrow":false,"text":"COVID","x":"2020-03-01","xanchor":"left","xref":"x","y":1,"yanchor":"top","yref":"y domain"},{"font":{"size":10},"showarrow":false,"text":"RBA hikes begin","x":"2022-05-01","xanchor":"left","xref":"x","y":1,"yanchor":"top","yref":"y domain"}],"legend":{"x":1.02,"y":1,"xanchor":"left"},"yaxis":{"title":{"text":"% change since Q1 2018"},"gridcolor":"#eee","zeroline":true,"zerolinecolor":"#bbb","zerolinewidth":1},"xaxis":{"title":{"text":""},"gridcolor":"#eee"},"title":{"text":""},"autosize":true,"hovermode":"x unified","plot_bgcolor":"white"},                        {"responsive": true, "scrollZoom": false}                    )                };            </script>        </div>
+    <div class="chart-caption"><strong>House price change since Q1 2018, eight Australian markets.</strong> Capitals shown solid, coastal lifestyle markets dashed. Click any city in the legend to hide or show it. Source: Domain API suburb performance statistics.</div>
+  </div>
+
+  <p>Built from suburb-level summary data: a sample of 30 suburbs per city spanning its price range, taken as the median of those suburb medians each quarter. Houses in Brisbane, Perth, Adelaide and both Queensland coasts roughly doubled since 2018; Sydney rose 55% and Melbourne just 18%.</p>
+</section>
+
+
+
+
+
+<!-- SLIDE 8: CHART: DAYS ON MARKET -->
+<section class="slide" id="s8">
+  <div class="slide-num"></div>
+  <h2>Example: How Long Properties Take to Sell</h2>
+  <p class="lead">"Days on market" measures how long a typical property sits before a buyer is found. A low number signals a hot market; a high number signals a buyer's market.</p>
+
+  <div class="chart-wrap">
+    <div class="fig"><div id="eb829f9f-be94-46f9-a345-ba476ea6046c" class="plotly-graph-div" style="height:100%; width:100%;"></div>            <script>                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("eb829f9f-be94-46f9-a345-ba476ea6046c")) {                    Plotly.newPlot(                        "eb829f9f-be94-46f9-a345-ba476ea6046c",                        [{"hovertemplate":"Hawthorn: %{y:.0f} days\u003cextra\u003e\u003c\u002fextra\u003e","marker":{"color":"#d62728"},"name":"Hawthorn","opacity":0.55,"x":["2018-05-01T00:00:00","2018-08-01T00:00:00","2018-11-01T00:00:00","2019-02-01T00:00:00","2019-05-01T00:00:00","2019-08-01T00:00:00","2019-11-01T00:00:00","2020-05-01T00:00:00","2020-08-01T00:00:00","2020-11-01T00:00:00","2021-02-01T00:00:00","2021-05-01T00:00:00","2021-08-01T00:00:00","2021-11-01T00:00:00","2022-02-01T00:00:00","2022-05-01T00:00:00","2022-08-01T00:00:00","2022-11-01T00:00:00","2023-02-01T00:00:00","2023-05-01T00:00:00","2023-11-01T00:00:00","2024-02-01T00:00:00","2024-05-01T00:00:00","2024-08-01T00:00:00","2024-11-01T00:00:00","2025-02-01T00:00:00","2025-05-01T00:00:00","2025-08-01T00:00:00","2025-11-01T00:00:00","2026-02-01T00:00:00","2026-05-01T00:00:00"],"y":{"dtype":"f8","bdata":"AAAAAAAAQkAAAAAAAABAQAAAAAAAAEZAAAAAAACAUUAAAAAAAABDQAAAAAAAgEVAAAAAAAAAQEAAAAAAAAA\u002fQAAAAAAAADpAAAAAAAAASkAAAAAAAAA\u002fQAAAAAAAADxAAAAAAAAAREAAAAAAAAA9QAAAAAAAAEVAAAAAAACAREAAAAAAAABBQAAAAAAAgEBAAAAAAAAAPkAAAAAAAIBBQAAAAAAAgEFAAAAAAAAAOUAAAAAAAIBAQAAAAAAAAExAAAAAAACAQUAAAAAAAABKQAAAAAAAAENAAAAAAACAR0AAAAAAAABEQAAAAAAAoGFAAAAAAAAAQEA="},"type":"bar"},{"legendgroup":"Hawthorn","line":{"color":"#d62728","width":2},"mode":"lines","name":"Hawthorn trend","showlegend":false,"x":["2018-05-01T00:00:00","2018-08-01T00:00:00","2018-11-01T00:00:00","2019-02-01T00:00:00","2019-05-01T00:00:00","2019-08-01T00:00:00","2019-11-01T00:00:00","2020-05-01T00:00:00","2020-08-01T00:00:00","2020-11-01T00:00:00","2021-02-01T00:00:00","2021-05-01T00:00:00","2021-08-01T00:00:00","2021-11-01T00:00:00","2022-02-01T00:00:00","2022-05-01T00:00:00","2022-08-01T00:00:00","2022-11-01T00:00:00","2023-02-01T00:00:00","2023-05-01T00:00:00","2023-11-01T00:00:00","2024-02-01T00:00:00","2024-05-01T00:00:00","2024-08-01T00:00:00","2024-11-01T00:00:00","2025-02-01T00:00:00","2025-05-01T00:00:00","2025-08-01T00:00:00","2025-11-01T00:00:00","2026-02-01T00:00:00","2026-05-01T00:00:00"],"y":{"dtype":"f8","bdata":"AAAAAAAAQkAAAAAAAABAQAAAAAAAAEZAAAAAAACAUUAAAAAAAABDQAAAAAAAgEVAAAAAAAAAQEAAAAAAAAA\u002fQAAAAAAAADpAAAAAAAAASkAAAAAAAAA\u002fQAAAAAAAADxAAAAAAAAAREAAAAAAAAA9QAAAAAAAAEVAAAAAAACAREAAAAAAAABBQAAAAAAAgEBAAAAAAAAAPkAAAAAAAIBBQAAAAAAAgEFAAAAAAAAAOUAAAAAAAIBAQAAAAAAAAExAAAAAAACAQUAAAAAAAABKQAAAAAAAAENAAAAAAACAR0AAAAAAAABEQAAAAAAAoGFAAAAAAAAAQEA="},"type":"scatter"},{"hovertemplate":"Frankston: %{y:.0f} days\u003cextra\u003e\u003c\u002fextra\u003e","marker":{"color":"#1f77b4"},"name":"Frankston","opacity":0.55,"x":["2018-02-01T00:00:00","2018-05-01T00:00:00","2018-08-01T00:00:00","2018-11-01T00:00:00","2019-02-01T00:00:00","2019-05-01T00:00:00","2019-08-01T00:00:00","2019-11-01T00:00:00","2020-02-01T00:00:00","2020-05-01T00:00:00","2020-08-01T00:00:00","2020-11-01T00:00:00","2021-02-01T00:00:00","2021-05-01T00:00:00","2021-08-01T00:00:00","2021-11-01T00:00:00","2022-02-01T00:00:00","2022-05-01T00:00:00","2022-08-01T00:00:00","2022-11-01T00:00:00","2023-02-01T00:00:00","2023-05-01T00:00:00","2023-08-01T00:00:00","2023-11-01T00:00:00","2024-02-01T00:00:00","2024-05-01T00:00:00","2024-08-01T00:00:00","2024-11-01T00:00:00","2025-02-01T00:00:00","2025-05-01T00:00:00","2025-08-01T00:00:00","2025-11-01T00:00:00","2026-02-01T00:00:00","2026-05-01T00:00:00"],"y":{"dtype":"i1","bdata":"FxcjIzUoKRYVECMSEQ0TDhMVHB4sExQOFRYXHR8RDQ8PFQ=="},"type":"bar"},{"legendgroup":"Frankston","line":{"color":"#1f77b4","width":2},"mode":"lines","name":"Frankston trend","showlegend":false,"x":["2018-02-01T00:00:00","2018-05-01T00:00:00","2018-08-01T00:00:00","2018-11-01T00:00:00","2019-02-01T00:00:00","2019-05-01T00:00:00","2019-08-01T00:00:00","2019-11-01T00:00:00","2020-02-01T00:00:00","2020-05-01T00:00:00","2020-08-01T00:00:00","2020-11-01T00:00:00","2021-02-01T00:00:00","2021-05-01T00:00:00","2021-08-01T00:00:00","2021-11-01T00:00:00","2022-02-01T00:00:00","2022-05-01T00:00:00","2022-08-01T00:00:00","2022-11-01T00:00:00","2023-02-01T00:00:00","2023-05-01T00:00:00","2023-08-01T00:00:00","2023-11-01T00:00:00","2024-02-01T00:00:00","2024-05-01T00:00:00","2024-08-01T00:00:00","2024-11-01T00:00:00","2025-02-01T00:00:00","2025-05-01T00:00:00","2025-08-01T00:00:00","2025-11-01T00:00:00","2026-02-01T00:00:00","2026-05-01T00:00:00"],"y":{"dtype":"i1","bdata":"FxcjIzUoKRYVECMSEQ0TDhMVHB4sExQOFRYXHR8RDQ8PFQ=="},"type":"scatter"}],                        {"template":{"data":{"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"choropleth":[{"colorbar":{"outlinewidth":0,"ticks":""},"type":"choropleth"}],"contourcarpet":[{"colorbar":{"outlinewidth":0,"ticks":""},"type":"contourcarpet"}],"contour":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"contour"}],"heatmap":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"heatmap"}],"histogram2dcontour":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"histogram2dcontour"}],"histogram2d":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"histogram2d"}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"mesh3d":[{"colorbar":{"outlinewidth":0,"ticks":""},"type":"mesh3d"}],"parcoords":[{"line":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"parcoords"}],"pie":[{"automargin":true,"type":"pie"}],"scatter3d":[{"line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatter3d"}],"scattercarpet":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattercarpet"}],"scattergeo":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattergeo"}],"scattergl":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattergl"}],"scattermapbox":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattermapbox"}],"scattermap":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattermap"}],"scatterpolargl":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatterpolargl"}],"scatterpolar":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatterpolar"}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"scatterternary":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatterternary"}],"surface":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"surface"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}]},"layout":{"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"autotypenumbers":"strict","coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]],"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]},"colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"geo":{"bgcolor":"white","lakecolor":"white","landcolor":"#E5ECF6","showlakes":true,"showland":true,"subunitcolor":"white"},"hoverlabel":{"align":"left"},"hovermode":"closest","mapbox":{"style":"light"},"margin":{"b":54,"l":62,"r":24,"t":26},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"bgcolor":"#E5ECF6","radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","gridwidth":2,"linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white"},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","gridwidth":2,"linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white"},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","gridwidth":2,"linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white"}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"ternary":{"aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"bgcolor":"#E5ECF6","caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"title":{"x":0,"font":{"size":17},"xanchor":"left"},"xaxis":{"automargin":true,"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","zerolinewidth":2},"yaxis":{"automargin":true,"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","zerolinewidth":2}}},"yaxis":{"title":{"text":"Days on market"},"gridcolor":"#eee"},"xaxis":{"gridcolor":"#eee"},"title":{"text":""},"autosize":true,"barmode":"group","plot_bgcolor":"white","hovermode":"x unified"},                        {"responsive": true}                    )                };            </script>        </div>
+    <div class="chart-caption"><strong>Median days on market, houses only, with trend lines.</strong> Hawthorn (inner Melbourne, premium) against Frankston (outer south-east, affordable). Source: Domain API <code>/v2/suburbPerformanceStatistics</code>.</div>
+  </div>
+
+  <p>The same suburb-level data that gives you median prices also gives you this demand signal. The reliable reading here is the gap in level between the two suburbs, not the trend within either: a Frankston house sells in about three weeks, a Hawthorn house in about five.</p>
+</section>
+
+
+<!-- SLIDE 9: CHART: SALE METHOD -->
+<section class="slide" id="s9">
+  <div class="slide-num"></div>
+  <h2>Example: How Properties Are Sold</h2>
+  <p class="lead">The mix of auctions vs private sales shifts with market conditions and differs sharply between suburbs.</p>
+
+  <div class="chart-wrap">
+    <div class="fig"><div id="6b4497fb-acb2-4766-b8bc-f707c63a32f4" class="plotly-graph-div" style="height:100%; width:100%;"></div>            <script>                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("6b4497fb-acb2-4766-b8bc-f707c63a32f4")) {                    Plotly.newPlot(                        "6b4497fb-acb2-4766-b8bc-f707c63a32f4",                        [{"hovertemplate":"Auction: %{y:.1f}%\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"SoldByAuction","marker":{"color":"#2ca02c"},"name":"Auction","showlegend":true,"x":["2018Q1","2018Q2","2018Q3","2018Q4","2019Q1","2019Q2","2019Q3","2019Q4","2020Q1","2020Q2","2020Q3","2020Q4","2021Q1","2021Q2","2021Q3","2021Q4","2022Q1","2022Q2","2022Q3","2022Q4","2023Q1","2023Q2","2023Q3","2023Q4","2024Q1","2024Q2","2024Q3","2024Q4","2025Q1","2025Q2","2025Q3","2025Q4","2026Q1","2026Q2","2026Q3"],"y":{"dtype":"f8","bdata":"LPc0wnLPUEAAAAAAAABOQIqd2Imd2EdAAAAAAAAASUBz7cBcOzBHQPHw8PDw8DtAZCuChpO6R0ATjLeyzyFPQD744IMPPkhAImg4qfvyMEAkSZIkSZIsQMJyTyMs90JAlMZHJtA7SUBWnJCSZxlLQAAAAAAAAEpAiiaaaKKJSUC3bdu2bdtBQK3utLrT6kBAz\u002fM8z\u002fM8RECF9hLaS+hDQHaDKfJZN0BAnud5nud5RECgLVaGb0RHQPDCQfT4LkRAbtu2bdsWREBXBA0ndV9BQE422WSTzUFALkL+mh21QkDDMAzDMAxDQD71Yj71YkBAAAAAAACAREBfQnsJ7SU8QGjyZYMmX0BATTDeyj6HOEAAAAAAAAAAAA=="},"type":"bar","xaxis":"x","yaxis":"y"},{"hovertemplate":"Prior to auction: %{y:.1f}%\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"SoldPriorToAuction","marker":{"color":"#98df8a"},"name":"Prior to auction","showlegend":true,"x":["2018Q1","2018Q2","2018Q3","2018Q4","2019Q1","2019Q2","2019Q3","2019Q4","2020Q1","2020Q2","2020Q3","2020Q4","2021Q1","2021Q2","2021Q3","2021Q4","2022Q1","2022Q2","2022Q3","2022Q4","2023Q1","2023Q2","2023Q3","2023Q4","2024Q1","2024Q2","2024Q3","2024Q4","2025Q1","2025Q2","2025Q3","2025Q4","2026Q1","2026Q2","2026Q3"],"y":{"dtype":"f8","bdata":"AAAAAAAAAABWVVVVVVX1P9mJndiJnfg\u002fAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACu7HNITTD+Pz744IMPPghAAAAAAAAAAADDMAzDMAwTQAAAAAAAAAAAoHfqWg5uBkDjhJQ8y4gOQFZVVVVVVfU\u002fNdFEE000EUAAAAAAAAAAALgg44KMCwJAJEmSJEmSDEAS2ktoL6H9P0PNSSAu1Ow\u002fn+d5nud5\u002fj+YdGoe5K4PQLrVGamYW\u002f0\u002fJEmSJEmSDEAEDSd1Xx4LQE422WSTTR5AFbycgpdTAEDDMAzDMAwTQGGFzmCFzhBAAAAAAAAACEAS2ktoL6ENQOwYxbmOUfw\u002fruxzSE0w\u002fj8AAAAAAAAAAA=="},"type":"bar","xaxis":"x","yaxis":"y"},{"hovertemplate":"Private treaty: %{y:.1f}%\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"SoldByPrivateTreaty","marker":{"color":"#d62728"},"name":"Private treaty","showlegend":true,"x":["2018Q1","2018Q2","2018Q3","2018Q4","2019Q1","2019Q2","2019Q3","2019Q4","2020Q1","2020Q2","2020Q3","2020Q4","2021Q1","2021Q2","2021Q3","2021Q4","2022Q1","2022Q2","2022Q3","2022Q4","2023Q1","2023Q2","2023Q3","2023Q4","2024Q1","2024Q2","2024Q3","2024Q4","2025Q1","2025Q2","2025Q3","2025Q4","2026Q1","2026Q2","2026Q3"],"y":{"dtype":"f8","bdata":"qBGWexphQEBVVVVVVVVDQCd2Yid2YklAAAAAAAAASUCOEj+jxM9KQMTDw8PDA1JAndR9eWxFSkCH1ATjrexBQD744IMPPkhA9+WxFUHDVEDP8zzP8zxUQD6NsNzTCE9A8pEJ9E5dR0BcG6a5C\u002f5EQFVVVVVVVUdAUD\u002f99NNPRkAlSZIkSRJQQEjfHH1z9E9An+d5nuf5S0CrqqqqqipNQKqqqqqqqlBAJEmSJEmSTEAXK8M3osBIQGJudUYq5kxAAAAAAAAgTEDZiqDhpO5OQOmiiy66aExAEvLX7KhFTkAkSZIkSZJMQBU6gxU6g09AAQAAAAAATECY0F5CewlRQGjyZYMmX1BAOqQmGG9lUkAAAAAAAABZQA=="},"type":"bar","xaxis":"x","yaxis":"y"},{"hovertemplate":"Auction: %{y:.1f}%\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"SoldByAuction","marker":{"color":"#2ca02c"},"name":"Auction","showlegend":false,"x":["2018Q1","2018Q2","2018Q3","2018Q4","2019Q1","2019Q2","2019Q3","2019Q4","2020Q1","2020Q2","2020Q3","2020Q4","2021Q1","2021Q2","2021Q3","2021Q4","2022Q1","2022Q2","2022Q3","2022Q4","2023Q1","2023Q2","2023Q3","2023Q4","2024Q1","2024Q2","2024Q3","2024Q4","2025Q1","2025Q2","2025Q3","2025Q4","2026Q1","2026Q2","2026Q3"],"y":{"dtype":"f8","bdata":"JrSX0F5CM0A816wOo0wtQNu2bdu2bR9ATCaTyWQyKUBE7UrUrkQdQKqqqqqqqiBAJ4fLgE8OL0AAAAAAAAA5QGuttdZaaytAEZ9AKjkvG0DOOeecc84JQO1zSE0w3hJA4X1rZHUZFkAhC1nIQhYqQEPNSSAu1BxATGgvob2EMkBvMEU+6wYrQF6J2pWoXSlAchzHcRzHEUDPusEU+awpQBnwyeEy4BNACAPOuBYJKkBnPOMZz3gmQPJZN5ginyVAvU9xyRCsE0AHaZAGaZAmQIZhGIZhGCJAMOgL+oK+IEB5eHh4eHgqQC666KKLLixAl0nPiGSZMECl+krmZ1EwQD744IMPPihAqqqqqqqqIECO4ziO4zgmQA=="},"type":"bar","xaxis":"x2","yaxis":"y2"},{"hovertemplate":"Prior to auction: %{y:.1f}%\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"SoldPriorToAuction","marker":{"color":"#98df8a"},"name":"Prior to auction","showlegend":false,"x":["2018Q1","2018Q2","2018Q3","2018Q4","2019Q1","2019Q2","2019Q3","2019Q4","2020Q1","2020Q2","2020Q3","2020Q4","2021Q1","2021Q2","2021Q3","2021Q4","2022Q1","2022Q2","2022Q3","2022Q4","2023Q1","2023Q2","2023Q3","2023Q4","2024Q1","2024Q2","2024Q3","2024Q4","2025Q1","2025Q2","2025Q3","2025Q4","2026Q1","2026Q2","2026Q3"],"y":{"dtype":"f8","bdata":"Q3sJ7SW05z9GmYrnmtURQLdt27Zt2\u002fY\u002fuVwul8vlAkAAAAAAAAAAAKuqqqqqquo\u002fGfDJ4TLg8z8AAAAAAAAAAM4555xzzuk\u002fD\u002fZbbQxNB0AAAAAAAAAAAK7sc0hNMN4\u002f4X1rZHUZBkCykIUsZCETQEogLtScBBJAchzHcRzHAUBDzUkgLtTsP2tXonYlagdAQ3sJ7SW05z\u002fyWTeYIp8FQBnwyeEy4ANAHaXbV1bv8j8g\u002fehHP\u002frxP0PNSSAu1Nw\u002fAAAAAAAAAADZiZ3YiZ34P7dt27Zt2\u002fY\u002fcUfcEXfE\u002fT+Hh4eHh4f3P9FFF1100QVA7jbNFuZuA0B8NCEvbBX0P3+lQK1fKQBAwzAMwzAMA0AAAAAAAAAAAA=="},"type":"bar","xaxis":"x2","yaxis":"y2"},{"hovertemplate":"Private treaty: %{y:.1f}%\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"SoldByPrivateTreaty","marker":{"color":"#d62728"},"name":"Private treaty","showlegend":false,"x":["2018Q1","2018Q2","2018Q3","2018Q4","2019Q1","2019Q2","2019Q3","2019Q4","2020Q1","2020Q2","2020Q3","2020Q4","2021Q1","2021Q2","2021Q3","2021Q4","2022Q1","2022Q2","2022Q3","2022Q4","2023Q1","2023Q2","2023Q3","2023Q4","2024Q1","2024Q2","2024Q3","2024Q4","2025Q1","2025Q2","2025Q3","2025Q4","2026Q1","2026Q2","2026Q3"],"y":{"dtype":"f8","bdata":"AAAAAAAAVECEu7HvETlUQNu2bdu2rVZAUSgUCoVCVUAsUbsStStXQFVVVVVVtVZAW2dfRLXOVEAAAAAAAMBSQN977733XlVAXxbxCaSSVkAyxhhjjDFYQNQE463ss1dAM+yV\u002fpztVkCRhSxkIYtUQCeBuFBzElZACu0ltJfQU0BYxvY7emVVQBmcj8H5GFVAQ3sJ7SW0V0DXDabIZx1VQH0R1Tr7IldAC9GGzx9zVUB\u002f9KMf\u002fehVQPXK2H5HL1ZABOto8z7FV0C4fMu3fMtVQBmGYRiGYVZA3BF3xB1xVkDT0tLS0lJVQIsuuuiiy1RA48MVrS8+VECFvLBVUJtUQMzbGRLzdlVAJUmSJElSVkCO4ziO4zhWQA=="},"type":"bar","xaxis":"x2","yaxis":"y2"}],                        {"template":{"data":{"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"choropleth":[{"colorbar":{"outlinewidth":0,"ticks":""},"type":"choropleth"}],"contourcarpet":[{"colorbar":{"outlinewidth":0,"ticks":""},"type":"contourcarpet"}],"contour":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"contour"}],"heatmap":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"heatmap"}],"histogram2dcontour":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"histogram2dcontour"}],"histogram2d":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"histogram2d"}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"mesh3d":[{"colorbar":{"outlinewidth":0,"ticks":""},"type":"mesh3d"}],"parcoords":[{"line":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"parcoords"}],"pie":[{"automargin":true,"type":"pie"}],"scatter3d":[{"line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatter3d"}],"scattercarpet":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattercarpet"}],"scattergeo":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattergeo"}],"scattergl":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattergl"}],"scattermapbox":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattermapbox"}],"scattermap":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattermap"}],"scatterpolargl":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatterpolargl"}],"scatterpolar":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatterpolar"}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"scatterternary":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatterternary"}],"surface":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"surface"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}]},"layout":{"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"autotypenumbers":"strict","coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]],"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]},"colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"geo":{"bgcolor":"white","lakecolor":"white","landcolor":"#E5ECF6","showlakes":true,"showland":true,"subunitcolor":"white"},"hoverlabel":{"align":"left"},"hovermode":"closest","mapbox":{"style":"light"},"margin":{"b":54,"l":62,"r":24,"t":26},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"bgcolor":"#E5ECF6","radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","gridwidth":2,"linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white"},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","gridwidth":2,"linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white"},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","gridwidth":2,"linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white"}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"ternary":{"aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"bgcolor":"#E5ECF6","caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"title":{"x":0,"font":{"size":17},"xanchor":"left"},"xaxis":{"automargin":true,"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","zerolinewidth":2},"yaxis":{"automargin":true,"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","zerolinewidth":2}}},"xaxis":{"anchor":"y","domain":[0.0,0.45]},"yaxis":{"anchor":"x","domain":[0.0,1.0],"title":{"text":"% of sales"},"gridcolor":"#eee","range":[0,100]},"xaxis2":{"anchor":"y2","domain":[0.55,1.0]},"yaxis2":{"anchor":"x2","domain":[0.0,1.0],"gridcolor":"#eee","range":[0,100]},"annotations":[{"font":{"size":16},"showarrow":false,"text":"Hawthorn","x":0.225,"xanchor":"center","xref":"paper","y":1.0,"yanchor":"bottom","yref":"paper"},{"font":{"size":16},"showarrow":false,"text":"Frankston","x":0.775,"xanchor":"center","xref":"paper","y":1.0,"yanchor":"bottom","yref":"paper"}],"title":{"text":""},"autosize":true,"barmode":"stack","plot_bgcolor":"white","hovermode":"x unified"},                        {"responsive": true}                    )                };            </script>        </div>
+    <div class="chart-caption"><strong>Sale method mix by quarter, as a share of all sales.</strong> Split three ways: cleared at auction, sold prior to auction, and private treaty. Click the legend to toggle a method across both suburbs. Source: Domain API residential listings endpoint.</div>
+  </div>
+
+  <p>Hawthorn leans on auctions; Frankston defaults to private treaty, where conditional contracts suit first-home buyers. Only Hawthorn's mix moves, drifting down roughly ten points after 2022, while Frankston's holds steady.</p>
+</section>
+
+
+<!-- SLIDE 10: GEOGRAPHIC COVERAGE -->
+<section class="slide" id="s10">
+  <div class="slide-num"></div>
+  <h2>What the data covers: where, and how far back</h2>
+  <p class="lead">All Australian states and territories, across every suburb with activity on Domain's platform. How far back you can go depends on which part of the dataset you need.</p>
+
+  <div class="two-col">
+    <div>
+      <div class="cards one-col">
+        <div class="card">
+          <div class="icon">&#128506;&#65039;</div>
+          <h3>All suburbs covered</h3>
+          <p>Query by suburb name and postcode. Cities, regional centres and most rural areas with listing activity are included; coverage thins in very remote areas.</p>
+        </div>
+        <div class="card">
+          <div class="icon">&#128208;</div>
+          <h3>ABS area mapping</h3>
+          <p>Domain uses suburb names and postcodes, not ABS statistical areas (SA2, SA3, SA4). Correspondence files convert between the two, but it is an extra step.</p>
+        </div>
+        <div class="card">
+          <div class="icon">&#128205;</div>
+          <h3>Spatial queries</h3>
+          <p>You can draw a polygon on a map and retrieve every listing inside it. Useful for corridor studies, catchments, or irregular boundaries.</p>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="timeline">
+        <div class="tl-row">
+          <div class="tl-year">Rolling ~10 yrs</div>
+          <div>
+            <strong>Suburb summaries</strong>
+            <div class="tl-detail">Quarterly, half-yearly and annual statistics over a rolling window of roughly the last decade. The most complete and reliable series.</div>
+          </div>
+        </div>
+        <div class="tl-row">
+          <div class="tl-year">2018 onward</div>
+          <div>
+            <strong>Individual listings (reliable)</strong>
+            <div class="tl-detail">Densely covered from 2018, and suitable for transaction-level research from that point.</div>
+          </div>
+        </div>
+        <div class="tl-row">
+          <div class="tl-year">2000-2018</div>
+          <div>
+            <strong>Individual listings (sparse)</strong>
+            <div class="tl-detail">Records exist but many are missing. Not reliable where complete market coverage is required.</div>
+          </div>
+        </div>
+        <div class="tl-row">
+          <div class="tl-year">2011, 2016, 2021</div>
+          <div>
+            <strong>Demographics</strong>
+            <div class="tl-detail">Suburb-level Census profiles, available for Census years only.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- SLIDE 11: TEMPORAL COVERAGE -->
+
+
+
+<!-- SLIDE 12: ACCESS MODEL -->
+<section class="slide" id="s12">
+  <div class="slide-num"></div>
+  <h2>How does access work?</h2>
+  <p class="lead">Access is managed by AURIN and is available to approved researchers at Australian universities and research organisations.</p>
+
+  <div class="two-col">
+    <div>
+      <div class="stats-row">
+        <div class="stat"><div class="val">1,000</div><div class="lbl">API credits per month</div></div>
+        <div class="stat"><div class="val">1</div><div class="lbl">credit per query</div></div>
+        <div class="stat"><div class="val">1st</div><div class="lbl">of each month, resets</div></div>
+      </div>
+
+      <h3 style="margin-top:8px">How a query works</h3>
+      <ul class="metrics">
+        <li><span class="dot"></span><span>You translate a specific question (e.g., give me suburb statistics for Fitzroy, 2020-2024) to an API query.</span></li>
+        <li><span class="dot"></span><span>The system returns the data instantly and deducts from your credit balance.</span></li>
+      </ul>
+    </div>
+    <div>
+      <div class="callout">
+        <strong>Credits are a finite monthly resource.</strong> Scoping queries around a defined research question ensures the allowance goes toward the data the study actually needs, rather than broad exploratory calls.
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <div class="icon">🔐</div>
+        <h3>Getting access</h3>
+        <p style="font-size:var(--fs-sm)">Approval through a breakthrough opportunity (or a relevant activity under your Node AAP), signing the AURIN data transfer agreement, then collecting your credentials. A full setup guide is available in the training materials.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- SLIDE 13: LIMITATIONS -->
+<section class="slide" id="s13">
+  <div class="slide-num"></div>
+  <h2>What this data can and cannot do</h2>
+  <p class="lead">A quick reference to check before designing a study around this source.</p>
+
+  <div class="yn-wrap">
+    <table class="yn-table">
+      <thead>
+        <tr><th>Research need</th><th>Covered?</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Suburb-level price trends over the last decade</td><td><span class="yes">Yes</span></td></tr>
+        <tr><td>Individual sold property records from 2018 onwards</td><td><span class="yes">Yes</span></td></tr>
+        <tr><td>Current and recent rental listings</td><td><span class="yes">Yes</span></td></tr>
+        <tr><td>Days on market, auction rates, sale method</td><td><span class="yes">Yes</span></td></tr>
+        <tr><td>Suburb demographics (Census years)</td><td><span class="yes">Yes</span></td></tr>
+        <tr><td>Suburb statistics older than the rolling window</td><td><span class="no">No (about 10 years back)</span></td></tr>
+        <tr><td>Complete listing records before 2018</td><td><span class="no">No (very sparse)</span></td></tr>
+        <tr><td>Bulk download of all records for a state</td><td><span class="no">No (query by query only)</span></td></tr>
+        <tr><td>SA2 / SA3 / SA4 aggregations out of the box</td><td><span class="partial">Partial (requires a mapping step)</span></td></tr>
+        <tr><td>Original asking price after a property has sold</td><td><span class="no">No (overwritten on sale)</span></td></tr>
+        <tr><td>Properties not listed on Domain.com.au</td><td><span class="no">No (Domain-only market view)</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</section>
+
+
+<!-- FOOTER -->
+<section class="slide-footer">
+  <h2>Questions?</h2>
+  <p>Training materials, worked examples, and a credit cost calculator are available in the accompanying guides and Jupyter notebooks. Start with the Getting Started guide.</p>
+  <div style="margin-top:2em; font-size:var(--fs-base); opacity:.55; letter-spacing:.04em;">Domain API · Accessed via AURIN · Data from Domain.com.au</div>
+</section>
+
+</div><!-- slides-wrapper -->
+
+<script>
+(function () {
+  var slides = Array.prototype.slice.call(
+    document.querySelectorAll('.slides-wrapper > section')
+  );
+  if (!slides.length) return;
+
+  var idx = 0;
+
+  // Slide numbers are written at runtime from the real slide count, so they can
+  // never drift out of step with the deck again.
+  (function number() {
+    var content = slides.filter(function (s) { return !s.classList.contains('slide-footer'); });
+    content.forEach(function (s, n) {
+      var el = s.querySelector('.slide-num');
+      if (el) el.textContent = 'Slide ' + (n + 1) + ' of ' + content.length;
+    });
+  })();
+
+  function resizeCharts(el) {
+    if (!window.Plotly) return;
+    // A chart rendered inside a hidden element has zero size, so it must be
+    // resized the moment its slide becomes visible.
+    el.querySelectorAll('.plotly-graph-div').forEach(function (d) {
+      try { window.Plotly.Plots.resize(d); } catch (err) {}
+    });
+  }
+
+  function show(i) {
+    idx = Math.max(0, Math.min(slides.length - 1, i));
+    slides.forEach(function (s, n) { s.classList.toggle('is-active', n === idx); });
+    var cur = slides[idx];
+    // Let layout settle before asking plotly for its new size.
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { resizeCharts(cur); });
+    });
+    if (history.replaceState && cur.id) history.replaceState(null, '', '#' + cur.id);
+  }
+
+  window.addEventListener('keydown', function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    var t = e.target;
+    if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+    if (t && t.isContentEditable) return;
+
+    var k = e.key;
+    if (k === 'ArrowDown' || k === 'ArrowRight' || k === 'PageDown') { e.preventDefault(); show(idx + 1); }
+    else if (k === 'ArrowUp' || k === 'ArrowLeft' || k === 'PageUp') { e.preventDefault(); show(idx - 1); }
+    else if (k === ' ') { e.preventDefault(); show(idx + (e.shiftKey ? -1 : 1)); }
+    else if (k === 'Home') { e.preventDefault(); show(0); }
+    else if (k === 'End') { e.preventDefault(); show(slides.length - 1); }
+    else if (k === 'f' || k === 'F') {
+      e.preventDefault();
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen();
+    }
+  }, true);   // capture phase: beat plotly to the arrow keys
+
+  // Index bar jumps to a slide instead of trying to scroll to it.
+  document.querySelectorAll('nav .toc a[href^="#"]').forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      var id = a.getAttribute('href').slice(1);
+      var i = slides.findIndex(function (s) { return s.id === id; });
+      if (i >= 0) { e.preventDefault(); show(i); }
+    });
+  });
+
+  // Click the right/left half of a slide to advance/go back.
+  document.querySelector('.slides-wrapper').addEventListener('click', function (e) {
+    if (e.target.closest('a, button, .plotly-graph-div, .modebar')) return;
+    var r = this.getBoundingClientRect();
+    show(idx + (e.clientX - r.left > r.width / 2 ? 1 : -1));
+  });
+
+  window.addEventListener('resize', function () { resizeCharts(slides[idx]); });
+  document.addEventListener('fullscreenchange', function () {
+    setTimeout(function () { resizeCharts(slides[idx]); }, 250);
+  });
+
+  // ---- print / PDF export --------------------------------------------
+  function enterPrintLayout() {
+    document.documentElement.classList.add('print-all');
+    slides.forEach(function (s) { s.classList.add('is-active'); });
+    slides.forEach(resizeCharts);
+  }
+  function leavePrintLayout() {
+    document.documentElement.classList.remove('print-all');
+    show(idx);
+  }
+  window.addEventListener('beforeprint', enterPrintLayout);
+  window.addEventListener('afterprint', leavePrintLayout);
+  if (/[?&]print=1/.test(location.search)) {
+    window.addEventListener('load', function () {
+      enterPrintLayout();
+      // give plotly a moment to redraw at the print size
+      setTimeout(function () { slides.forEach(resizeCharts); document.title = 'ready'; }, 900);
+    });
+  }
+
+  // Open on the slide named in the URL, if any.
+  var startIdx = slides.findIndex(function (s) { return '#' + s.id === location.hash; });
+  show(startIdx >= 0 ? startIdx : 0);
+  window.addEventListener('load', function () { resizeCharts(slides[idx]); });
+})();
+</script>
+</body>
+</html>
