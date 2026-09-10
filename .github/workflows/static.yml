@@ -2,7 +2,7 @@ name: Deploy slides to GitHub Pages
 
 on:
   push:
-    branches: [Domain_API_Service]
+    branches: [main]
     paths:
       - "slides/domain-slides.html"
       - ".github/workflows/pages.yml"
@@ -27,7 +27,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: Domain_API_Service
+          ref: main
 
       - name: Prepare site folder
         run: |
