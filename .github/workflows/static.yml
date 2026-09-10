@@ -30,8 +30,11 @@ jobs:
       - name: Prepare site folder
         run: |
           mkdir -p _site
-          cp slides/domain-slides.html _site/index.html
+          cp slides/domain-slides.html _site/domain-slides.html
           touch _site/.nojekyll
+
+      - name: Rename to index.html
+        run: mv _site/domain-slides.html _site/index.html
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
