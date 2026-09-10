@@ -26,6 +26,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: Domain_API_Service
 
       - name: Prepare site folder
         run: |
