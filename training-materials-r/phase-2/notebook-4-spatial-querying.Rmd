@@ -1,0 +1,706 @@
+---
+title: "Notebook 4: Spatial Querying"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+```
+
+## What this notebook does
+
+The Domain API understands suburb names. But urban research often works
+with ABS boundaries (SA2, LGA, Greater Capital City regions) that do not
+align neatly with suburb names. An SA2 may cover parts of several
+suburbs. A suburb may straddle two SA2 boundaries. Querying suburb by
+suburb introduces extra costs, gaps and overlaps.
+
+The API's solution is `geoWindow`: you feed the API a polygon as a list
+of coordinates and ask for all listings whose property location falls
+inside it.
+
+## Why spatial querying is the recommended approach
+
+For any study area larger than a single suburb, spatial querying is
+almost always the most credit-efficient approach.
+
+When querying suburb by suburb, every suburb costs at least one probe
+credit plus one credit per page of results. Ten suburbs means ten probes
+and ten separate sets of fetch pages. A polygon covering the same ten
+suburbs costs **one probe and one set of fetch pages for the entire
+area**, the same structure as a single-suburb query, regardless of how
+many suburb boundaries sit inside it.
+
+The suburb-by-suburb approach from Notebook 3 is still useful when you
+specifically want per-suburb breakdowns, or when your study area is
+defined by a list of suburb names rather than a geographic boundary. For
+everything else, SA2s, LGAs, catchment areas, corridor studies, a
+polygon query is the right starting point.
+
+This notebook teaches you:
+
+1.  What GeoJSON boundary files are and where the pre-prepared ones
+    live.
+2.  Why the coordinate format in GeoJSON files must be converted before
+    sending to the API.
+3.  The difference between a bounding box (rough rectangle) and a
+    polygon (exact boundary), and when to use each.
+4.  How to run a spatial listing search and visualise the results on a
+    map.
+5.  How cursor advancement (from Notebook 3) applies equally to spatial
+    queries.
+
+**By the end** you will have downloaded listings for the
+Fitzroy/Collingwood area using a precise polygon boundary and produced a
+map showing where those listings sit.
+
+------------------------------------------------------------------------
+
+## Before You Start
+
+**If you have already completed Notebook 0**, your packages, `.env`
+file, and connection are already set up.
+
+If this is your first time using Domain API, complete
+`notebook-0-getting-started.Rmd` first. It covers package installation,
+creating the `.env` credentials file, and making a test call to confirm
+your connection works. Then complete Notebook 1 before this one, as it
+introduces the listings endpoint used throughout this notebook. If you
+plan to query a large area (with more than 1,000 listings potentially),
+read Notebook 3 first for the cursor advancement technique.
+
+### Set your boundary file path
+
+This notebook uses a GeoJSON boundary file. Set the path to wherever the
+file lives on your machine in the setup chunk below. If you are working
+from the AURIN training materials repository, an example file is
+provided in the `test_areas` folder, but the path is not assumed, set it
+explicitly.
+
+Depending on the operating system you are using, copying and pasting a
+path directly may cause an error. Windows file manager gives you
+backslashes (`C:\Users\you\boundaries\area.geojson`), while Mac and
+Linux give you forward slashes (`/Users/you/boundaries/area.geojson`). A
+single backslash has a special meaning inside quotes in R, so either
+double each one (`"C:\\Users\\you\\boundaries\\area.geojson"`) or swap
+them for forward slashes (`"C:/Users/you/boundaries/area.geojson"`),
+which R understands on every operating system.
+
+------------------------------------------------------------------------
+
+## Key Terms
+
+**GeoJSON:** A standard file format for storing geographic shapes
+(points, lines, polygons) as text. The ABS publishes its SA2, LGA, and
+other boundary files in this format.
+
+**Polygon:** A closed shape defined by a list of coordinates (corner
+points). A suburb boundary or SA2 boundary is stored as a polygon.
+
+**Coordinate:** A pair of numbers that specifies a location on Earth.
+The first number is longitude (east-west position) and the second is
+latitude (north-south position). Melbourne is roughly at latitude -37.8
+and longitude 144.9.
+
+**Bounding box:** The smallest rectangle that fully encloses a polygon,
+defined by its northernmost, southernmost, easternmost, and westernmost
+points. It is faster to compute than the full polygon but captures a
+larger area.
+
+**SA2 (Statistical Area Level 2):** An ABS geographic unit containing
+roughly 3,000 to 25,000 people, used for census and demographic data.
+
+**geoWindow:** The parameter name in the Domain API for spatial
+filtering. It accepts either a polygon or a bounding box.
+
+------------------------------------------------------------------------
+
+## Setup: Check Packages and Files
+
+Run the chunk below to confirm all required packages are installed and
+your boundary file is found.
+
+```{r package-check}
+# Check required packages
+needed <- c("httr2", "jsonlite", "purrr", "tibble", "dplyr", "readr", "leaflet")
+missing <- needed[!vapply(needed, requireNamespace, logical(1), quietly = TRUE)]
+
+if (length(missing) > 0) {
+  cat("Missing packages, run in the R console:\n")
+  cat("  install.packages(c(", paste0('"', missing, '"', collapse = ", "), "))\n", sep = "")
+} else {
+  cat("Packages: OK\n")
+}
+
+# -----------------------------------------------------------------------
+# Set the path to your GeoJSON boundary file here.
+# This can be an absolute path or relative to the location of this notebook.
+# Use forward slashes (/) on Mac and Linux. On Windows, use either forward
+# slashes or doubled backslashes (\\), because a pasted Windows path with
+# single backslashes will not work here.
+# -----------------------------------------------------------------------
+FITZROY_COLLINGWOOD <- file.path("..", "..", "test_areas", "fitzroy_collingwood.geojson")
+# -----------------------------------------------------------------------
+
+if (file.exists(FITZROY_COLLINGWOOD)) {
+  cat("Fitzroy/Collingwood boundary: Found  (", normalizePath(FITZROY_COLLINGWOOD), ")\n", sep = "")
+} else {
+  cat("Fitzroy/Collingwood boundary: NOT FOUND\n")
+  cat("  Expected at: ", file.path(normalizePath("."), FITZROY_COLLINGWOOD), "\n", sep = "")
+  cat("  Update the path at the top of this chunk.\n")
+}
+```
+
+## Setup: Connect to the API
+
+```{r connect}
+library(dplyr)
+library(tibble)
+library(purrr)
+library(leaflet)
+
+source("utils.R")
+
+tracker <- make_tracker()
+
+cat("Connected to:", PROXY_BASE, "\n")
+cat("Account:     ", AURIN_USERNAME, "\n")
+```
+
+------------------------------------------------------------------------
+
+## Credit Comparison: Suburb-by-Suburb vs. Polygon
+
+Before getting into the mechanics, it helps to see the credit saving in
+concrete numbers using the same 10 inner-Melbourne suburbs from Notebook
+3.
+
+The suburb-by-suburb approach sends one probe per suburb, 10 API calls.
+A single bounding box covering the same area costs 1 API call. The
+saving carries through to the full fetch too: each suburb also needs its
+own set of page calls, while a polygon retrieves the entire area in one
+continuous run.
+
+**This chunk costs 11 credits total.** If you want to save credits, read
+the output and move on, you do not need to re-run it. If you are
+planning a large extraction, use the [Credit Calculator
+guide](../phase-1/03-credit-calculator.md) to estimate costs before
+running.
+
+```{r credit-comparison}
+# --- Approach 1: one probe per suburb (10 credits) ---
+SUBURBS_NB3 <- list(
+  list("Carlton",     "VIC", "3053"),
+  list("Fitzroy",     "VIC", "3065"),
+  list("Collingwood", "VIC", "3066"),
+  list("Richmond",    "VIC", "3121"),
+  list("Brunswick",   "VIC", "3056"),
+  list("Northcote",   "VIC", "3070"),
+  list("Abbotsford",  "VIC", "3067"),
+  list("Prahran",     "VIC", "3181"),
+  list("St Kilda",    "VIC", "3182"),
+  list("South Yarra", "VIC", "3141")
+)
+
+START_DATE    <- "2022-01-01"
+# Start with an explicitly numeric vector. An empty c() is NULL; assigning
+# named values to NULL with [[ ]] creates a list, which sum() cannot add.
+suburb_counts <- integer(0)
+calls_before  <- tracker$total()
+
+for (entry in SUBURBS_NB3) {
+  suburb   <- entry[[1]]
+  state    <- entry[[2]]
+  postcode <- entry[[3]]
+
+  payload <- list(
+    listingType = "Sold",
+    listedSince = START_DATE,
+    locations = list(list(state = state, suburb = suburb, postCode = postcode,
+                          includeSurroundingSuburbs = FALSE))
+  )
+  count <- probe_count(payload, tracker)
+  suburb_counts[[suburb]] <- if (is.null(count)) 0L else count
+  cat(sprintf("  %-15s %6s records\n", suburb, format(suburb_counts[[suburb]], big.mark = ",")))
+}
+
+suburb_probe_calls <- tracker$total() - calls_before
+suburb_total       <- sum(suburb_counts)
+tracker$checkpoint("Credit comparison: suburb probes (10 calls)")
+
+cat("\nSuburb-by-suburb:  ", suburb_probe_calls, " probe credits  ->  ",
+    format(suburb_total, big.mark = ","), " records total\n", sep = "")
+
+# --- Approach 2: one bounding box covering the same area (1 credit) ---
+# Approximate bounding box for the 10 inner-Melbourne suburbs above
+inner_melb_box_payload <- list(
+  listingType = "Sold",
+  listedSince = START_DATE,
+  geoWindow = list(
+    box = list(
+      topLeft     = list(lat = -37.755, lon = 144.940),
+      bottomRight = list(lat = -37.875, lon = 145.025)
+    )
+  )
+)
+
+calls_before     <- tracker$total()
+bbox_count       <- probe_count(inner_melb_box_payload, tracker)
+bbox_probe_calls <- tracker$total() - calls_before
+tracker$checkpoint("Credit comparison: bounding box probe (1 call)")
+
+cat("Single bounding box: ", bbox_probe_calls, " probe credit   ->  ",
+    format(bbox_count, big.mark = ","), " records total\n\n", sep = "")
+
+savings <- suburb_probe_calls - bbox_probe_calls
+cat(sprintf("Probe credits saved: %d of %d (%.0f%% reduction)\n",
+            savings, suburb_probe_calls, savings / suburb_probe_calls * 100))
+cat("\n")
+cat("Note: the bounding box count may be slightly higher because the rectangle\n")
+cat("extends a little beyond some suburb edges, capturing neighbouring properties.\n")
+```
+
+------------------------------------------------------------------------
+
+## What Is a GeoJSON File?
+
+GeoJSON is a text file format for storing geographic shapes. Open any
+`.geojson` file in a text editor and you will see something like:
+
+``` json
+{"type": "FeatureCollection", "features": [{"geometry": {"coordinates": [[144.97, -37.80]]}}]}
+```
+
+Each pair of numbers is one corner point of the boundary polygon. The
+ABS publishes boundary files in this format for SA2, LGA, and other
+boundaries, you can download them from the ABS website or use your own.
+
+The chunks below use `FITZROY_COLLINGWOOD`, a small inner-Melbourne area
+used as the worked example. To use your own boundary, update the path in
+the setup chunk and replace `FITZROY_COLLINGWOOD` with your variable
+name in the chunks below.
+
+### Load and inspect the Fitzroy/Collingwood boundary
+
+Run the chunk below to open the file and print its contents. You do not
+need to understand all of it; just notice that coordinates come in pairs
+and that the numbers look like Melbourne longitude/latitude values.
+
+```{r inspect-geojson}
+# Open the GeoJSON file and read its contents.
+# read_json turns the text file into a nested R list.
+fitzroy_geojson <- jsonlite::read_json(FITZROY_COLLINGWOOD, simplifyVector = FALSE)
+
+# Get the geometry (the boundary shape) of the first feature in the file
+feature <- fitzroy_geojson$features[[1]]
+geom    <- feature$geometry
+
+# Get the outer ring of the polygon (the boundary itself, not any holes inside it)
+ring <- geom$coordinates[[1]]
+
+cat("Boundary type:", geom$type, "\n")
+cat("Number of corner points:", length(ring), "\n\n")
+cat("First 3 coordinate pairs (GeoJSON format: [longitude, latitude]):\n")
+for (coord in head(ring, 3)) {
+  cat(sprintf("  [lon=%.6f, lat=%.6f]\n", coord[[1]], coord[[2]]))
+}
+```
+
+------------------------------------------------------------------------
+
+## The Coordinate Order Problem
+
+GeoJSON stores coordinates as `[longitude, latitude]`, with longitude
+first. The Domain API expects `lat` and `lon` as named fields, with
+latitude first.
+
+If you send coordinates in the wrong order, the polygon will be placed
+somewhere in the Indian Ocean. The API will not warn you, it will simply
+return zero results, and the probe credit is spent.
+
+The `geojson_file_to_api_polygon()` function handles the conversion
+automatically. But if you ever build coordinates manually or load them
+from a different source, the swap is easy to introduce silently.
+
+`validate_australia_coords()` is a zero-credit guard from `utils.R` that
+checks whether your converted points fall within Australia's bounding
+box before you make any API call. The chunk below the conversion
+demonstrates it on both correct and swapped coordinates.
+
+```{r convert-coords}
+# Convert the GeoJSON file to the format the Domain API expects
+api_polygon <- geojson_file_to_api_polygon(FITZROY_COLLINGWOOD)
+
+cat("Number of polygon points for the API:", length(api_polygon), "\n\n")
+cat("First 3 points after conversion (API format: lat, lon):\n")
+for (pt in head(api_polygon, 3)) {
+  cat(sprintf("  lat=%.6f, lon=%.6f\n", pt$lat, pt$lon))
+}
+cat("\nCompare: the lat and lon values are the same but the order is now lat-first.\n")
+
+# This is the complete geoWindow payload structure ready to send to the API
+polygon_geo_window <- list(polygon = list(points = api_polygon))
+```
+
+```{r validate-coords}
+# validate_australia_coords is defined in utils.R and available after source().
+# Run it after any coordinate conversion and before the first probe.
+
+# --- correct coordinates (should pass) ---
+cat("=== Correct coordinates (after conversion) ===\n")
+validate_australia_coords(api_polygon, label = "Fitzroy/Collingwood polygon")
+
+# --- swapped coordinates (GeoJSON order sent directly) ---
+cat("\n=== Swapped coordinates (GeoJSON [lon, lat] sent as-is) ===\n")
+swapped <- lapply(api_polygon, \(pt) list(lat = pt$lon, lon = pt$lat))
+result  <- validate_australia_coords(swapped, label = "Fitzroy/Collingwood polygon (swapped)")
+# result is FALSE when coordinates fail the check; the warning above explains what to fix
+```
+
+------------------------------------------------------------------------
+
+## Bounding Box vs. Polygon: Which Should You Use?
+
+The API supports two spatial filter types:
+
+**Bounding box** (`geoWindow$box`): a rectangle defined by four edges
+(north, south, east, west). Think of drawing a rectangle around the
+boundary on a map. It is simple to compute but will include listings
+from outside your actual study area. Any property in the corners of the
+rectangle but outside the true boundary will be captured.
+
+**Polygon** (`geoWindow$polygon`): traces the exact boundary. Only
+listings whose property coordinates fall inside the polygon are
+returned. This is more precise but requires sending more coordinates in
+each request.
+
+**Rule of thumb:** use the polygon for official boundaries (SA2, LGA)
+where precision matters. Use the bounding box for quick exploratory
+queries or for very irregular shapes with hundreds of vertices (where
+the polygon payload becomes very large).
+
+### Compute the bounding box
+
+The `geojson_bbox_to_api_box()` function finds the northernmost,
+southernmost, easternmost, and westernmost points of the polygon.
+
+```{r compute-bbox}
+# Compute the bounding box of the Fitzroy/Collingwood polygon
+api_box <- geojson_bbox_to_api_box(FITZROY_COLLINGWOOD)
+
+cat("Bounding box corners:\n")
+cat(sprintf("  North edge (topLeft lat):     %.6f\n", api_box$topLeft$lat))
+cat(sprintf("  South edge (bottomRight lat): %.6f\n", api_box$bottomRight$lat))
+cat(sprintf("  West edge  (topLeft lon):     %.6f\n", api_box$topLeft$lon))
+cat(sprintf("  East edge  (bottomRight lon): %.6f\n", api_box$bottomRight$lon))
+
+# This is the complete geoWindow payload for the bounding box
+box_geo_window <- list(box = api_box)
+```
+
+### Compare the record counts: bounding box vs. polygon
+
+The next chunk runs a 1-credit probe for each approach. **This costs 2
+credits total.** The difference in counts is the number of listings
+captured by the rectangle's corners that fall outside the true polygon
+boundary.
+
+Note: the test boundary file used in this notebook is a simple rectangle
+(5 points), so the tight bounding box computed above is identical to the
+polygon and would return the same count, which defeats the purpose of
+the demonstration. To illustrate the difference clearly, the comparison
+below uses a deliberately padded bounding box that extends 0.015 degrees
+beyond each edge of the polygon, making it meaningfully larger than the
+true boundary.
+
+```{r compare-bbox-polygon}
+# Define the base search criteria (same for both approaches)
+base_criteria <- list(
+  listingType = "Sold",
+  listedSince = "2021-01-01"
+)
+
+# Padded bounding box: extends 0.015 degrees beyond each edge of the polygon.
+# This is deliberate: the tight bbox computed from a rectangular polygon is
+# identical to the polygon itself, so padding is needed to show a meaningful difference.
+PAD <- 0.015
+padded_box_geo_window <- list(
+  box = list(
+    topLeft     = list(lat = api_box$topLeft$lat     + PAD,
+                       lon = api_box$topLeft$lon     - PAD),
+    bottomRight = list(lat = api_box$bottomRight$lat - PAD,
+                       lon = api_box$bottomRight$lon + PAD)
+  )
+)
+
+# Probe with padded bounding box (1 credit)
+payload_box <- modifyList(base_criteria, list(geoWindow = padded_box_geo_window))
+count_box   <- probe_count(payload_box, tracker)
+tracker$checkpoint("Bounding box probe")
+
+# Probe with polygon (1 credit)
+payload_polygon <- modifyList(base_criteria, list(geoWindow = polygon_geo_window))
+count_polygon   <- probe_count(payload_polygon, tracker)
+tracker$checkpoint("Polygon probe")
+
+cat("Padded bounding box count:", format(count_box,     big.mark = ","), "\n")
+cat("Polygon count:            ", format(count_polygon, big.mark = ","), "\n")
+
+if (!is.null(count_box) && !is.null(count_polygon)) {
+  overshoot <- count_box - count_polygon
+  cat("Overshoot:", format(overshoot, big.mark = ","),
+      "extra listings captured by the box but outside the true boundary\n")
+}
+```
+
+**Reading the result:** the padded bounding box returns more listings
+than the polygon because it extends beyond the true boundary. Those
+extra listings belong to neighbouring streets and suburbs caught by the
+rectangle's edges. With a real SA2 or LGA boundary (which has an
+irregular shape), the tight bounding box would also produce overshoot,
+often substantial in areas with irregular coastlines or diagonal edges.
+For a precise study, always use the polygon.
+
+------------------------------------------------------------------------
+
+## Fetching Listings Within the Polygon
+
+The probe showed over 3,500 records for the Fitzroy/Collingwood polygon
+since 2021, so cursor advancement is needed. The `fetch_all_cursor`
+function below is the same one introduced in Notebook 3, the only
+difference from a suburb-based query is that the payload uses
+`geoWindow` instead of `locations`. The function itself is identical.
+
+**Note on credits:** each page of 200 records costs 1 credit. The chunk
+below will spend roughly 18 to 20 credits to fetch the full dataset.
+
+```{r fetch-polygon}
+fetch_all_cursor <- function(base_payload, start_date, page_size = 200, tracker) {
+  # Retrieve ALL listings for a query that may exceed 1,000 results.
+  # Works with both suburb-based and spatial (geoWindow) queries.
+
+  all_listings  <- list()
+  current_since <- start_date
+  prev_cursor   <- NULL
+  run           <- 0
+
+  repeat {
+    run   <- run + 1
+    page  <- 1
+    batch <- list()
+    hit_limit <- FALSE
+
+    repeat {
+      payload <- modifyList(base_payload, list(
+        listedSince = current_since,
+        sort        = list(sortKey = "DateListed", direction = "Ascending"),
+        pageSize    = page_size,
+        pageNumber  = page
+      ))
+
+      r <- tracker$post(
+        paste0(PROXY_BASE, "/v1/listings/residential/_search"),
+        json_body = payload
+      )
+
+      if (resp_status(r) == 400 && grepl("Cannot page beyond 1000", resp_body_string(r))) {
+        hit_limit <- TRUE
+        break
+      }
+      if (resp_status(r) != 200) {
+        cat("  Run ", run, ", page ", page, ": HTTP ", resp_status(r), "\n", sep = "")
+        return(unname(all_listings))
+      }
+
+      groups <- resp_body_json(r, simplifyVector = FALSE)
+      for (g in groups) {
+        raw <- g$listings
+        if (is.null(raw) || length(raw) == 0) raw <- g$listing
+        if (is.null(raw) || length(raw) == 0) next
+        if (is.null(names(raw))) batch <- c(batch, raw) else batch <- c(batch, list(raw))
+      }
+
+      hdr <- resp_header(r, "x-pagination-pagesize")
+      actual_page_size <- if (is.null(hdr)) page_size else as.integer(hdr)
+      if (length(groups) < actual_page_size) break
+      page <- page + 1
+    }
+
+    before <- length(all_listings)
+    for (item in batch) {
+      id <- field(item, "id")
+      if (!is.na(id)) all_listings[[as.character(id)]] <- item
+    }
+    cat(sprintf("  Run %d: +%5d new | total: %6d\n",
+                run, length(all_listings) - before, length(all_listings)))
+
+    if (!hit_limit || length(batch) == 0) break
+
+    dates <- vapply(batch, \(item) substr(field(item, "dateListed"), 1, 10), character(1))
+    dates <- dates[!is.na(dates)]
+    if (length(dates) == 0) break
+    cursor <- max(dates)
+    if (!is.null(prev_cursor) && cursor == prev_cursor) {
+      cat("  Cursor stuck at ", cursor, ". Stopping.\n", sep = "")
+      break
+    }
+    prev_cursor   <- cursor
+    current_since <- cursor
+  }
+
+  unname(all_listings)
+}
+
+
+cat("Fetching Fitzroy/Collingwood polygon listings (cursor advancement)...\n")
+polygon_raw <- fetch_all_cursor(payload_polygon, start_date = "2021-01-01",
+                                tracker = tracker)
+tracker$checkpoint("Polygon fetch")
+
+# Extract coordinates and key fields, keeping only records that have coordinates
+df_polygon <- polygon_raw |>
+  map(\(item) tibble(
+    id          = as.character(field(item, "id")),
+    suburb      = field(item, "propertyDetails", "suburb"),
+    lat         = as.numeric(field(item, "propertyDetails", "latitude")),
+    lon         = as.numeric(field(item, "propertyDetails", "longitude")),
+    date_listed = substr(field(item, "dateListed"), 1, 10)
+  )) |>
+  bind_rows() |>
+  filter(!is.na(lat), !is.na(lon))
+
+cat("\nListings with coordinates:", format(nrow(df_polygon), big.mark = ","), "\n")
+knitr::kable(head(df_polygon, 5))
+```
+
+------------------------------------------------------------------------
+
+## Visualising the Difference: Polygon vs. Bounding Box
+
+The map below plots the listings already fetched (`df_polygon`) over an
+OpenStreetMap base layer, with both boundaries drawn on top:
+
+-   **Blue line**: the polygon boundary (the true study area)
+-   **Red line**: the padded bounding box (extends beyond the polygon in
+    all directions)
+-   **Blue dots**: listings returned by the polygon query
+
+You can see visually that the red box extends into neighbouring streets
+and suburbs. Any properties in that fringe would be captured by a
+bounding box query but not a polygon query.
+
+```{r map}
+centre_lat <- (api_box$topLeft$lat + api_box$bottomRight$lat) / 2
+centre_lon <- (api_box$topLeft$lon + api_box$bottomRight$lon) / 2
+
+# Pull the polygon's coordinates out into plain vectors for leaflet
+poly_lats <- vapply(api_polygon, \(pt) pt$lat, numeric(1))
+poly_lons <- vapply(api_polygon, \(pt) pt$lon, numeric(1))
+
+tl <- padded_box_geo_window$box$topLeft
+br <- padded_box_geo_window$box$bottomRight
+
+m <- leaflet() |>
+  addTiles() |>
+  setView(lng = centre_lon, lat = centre_lat, zoom = 14) |>
+
+  # Polygon boundary (blue)
+  addPolygons(
+    lng = poly_lons, lat = poly_lats,
+    color = "blue", weight = 2, fill = FALSE,
+    label = "Polygon boundary"
+  ) |>
+
+  # Padded bounding box boundary (red)
+  addRectangles(
+    lng1 = tl$lon, lat1 = tl$lat,
+    lng2 = br$lon, lat2 = br$lat,
+    color = "red", weight = 2, fill = FALSE,
+    label = "Padded bounding box"
+  )
+
+# Listings from the polygon fetch (blue dots)
+if (nrow(df_polygon) > 0) {
+  m <- m |>
+    addCircleMarkers(
+      data = df_polygon, lng = ~lon, lat = ~lat,
+      radius = 3, color = "steelblue", stroke = FALSE, fillOpacity = 0.5
+    )
+}
+
+m
+```
+
+------------------------------------------------------------------------
+
+## What If Something Goes Wrong?
+
+**Boundary file not found:** Update the `FITZROY_COLLINGWOOD` path in
+the setup chunk to the actual location of your file. The message prints
+the full path it tried so you can see exactly what to correct. If you
+pasted the path from Windows file manager, replace each single backslash
+with a forward slash (`/`) or a doubled backslash (`\\`), otherwise R
+cannot read it.
+
+**Probe returns 0 records from the polygon:** This usually means the
+coordinates are in the wrong order (longitude and latitude swapped). The
+`geojson_file_to_api_polygon()` function handles the conversion
+automatically, so this should not happen if you use it. If you provide
+your own coordinates manually, double-check the order and run
+`validate_australia_coords()` before the first probe.
+
+**The map shows dots in the wrong location (e.g. the ocean):** Longitude
+and latitude may have been swapped somewhere. Melbourne is at roughly
+lat=-37.8, lon=144.9. If your dots appear at lat=144.9, lon=-37.8 (which
+is in the Indian Ocean), the coordinate order needs to be fixed.
+
+**The map area is blank or the map does not appear:** The `leaflet`
+package is probably not installed. Run `install.packages("leaflet")` and
+re-run the chunk. If you are reading the `.Rmd` source rather than the
+knitted HTML, the map will not render at all; click **Knit** in RStudio
+to produce the HTML version, or run the chunk interactively to see the
+map in the Viewer pane.
+
+**Authentication failure:** Check your `.env` file and confirm
+`AURIN_USERNAME` and `AURIN_PASSWORD` are set correctly. See the [Data
+Access Guide](../phase-1/01-data-access-guide.md) if you need to set up
+credentials from scratch.
+
+------------------------------------------------------------------------
+
+## You Have Reached the End of Phase 2
+
+You can now query the Domain API by suburb name or by a custom
+geographic boundary, and retrieve all matching records regardless of how
+many there are.
+
+Here is a summary of what each notebook covered:
+
+-   **Notebook 0:** Setting up your environment and making your first
+    API call.
+-   **Notebook 1:** The listings endpoint, filtering, pagination, and
+    saving results to CSV.
+-   **Notebook 2:** The suburb performance statistics endpoint,
+    quarterly trends, and charting.
+-   **Notebook 3:** Cursor advancement for queries over 1,000 records,
+    plus checkpoint recovery for long-running extractions.
+-   **Notebook 4 (this notebook):** Spatial queries using GeoJSON
+    boundary files.
+
+From here, apply these tools to your own research question. The [Credit
+Calculator guide](../phase-1/03-credit-calculator.md) can help you
+estimate costs before running a large extraction.
+
+------------------------------------------------------------------------
+
+## Credit Summary
+
+```{r credit-summary}
+tracker$summary()
+```

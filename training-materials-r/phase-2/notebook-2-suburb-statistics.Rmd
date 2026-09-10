@@ -1,0 +1,614 @@
+---
+title: "Notebook 2: Suburb Performance Statistics"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE, fig.width = 10, fig.height = 4.5)
+```
+
+## What this notebook covers
+
+The previous notebook downloaded individual property listings, one row per property sold. This notebook downloads something different: **aggregated market statistics** for an entire suburb, summarised by quarter.
+
+Aggregated statistics include things like:
+
+- The median sale price for all houses sold in Carlton in Q3 2023
+- How many properties sold in that quarter
+- The median number of days a property sat on the market before selling
+
+These come from a different endpoint that works differently from the listings search:
+
+- One call retrieves **up to 45 quarters** of historical data (about 11 years)
+- The cost is always **1 credit per call**, regardless of how many quarters you request
+- All downstream analysis (charts, comparisons) happens locally from that one fetch
+
+**By the end** you will have quarterly statistics for six Melbourne suburbs in a single table, plus two charts produced from that data without spending any more credits.
+
+------------------------------------------------------------------------
+
+## Before You Start
+
+**If you have already completed Notebook 0**, your packages, `.env` file, and connection are already set up.
+
+If this is your first time in phase-2, complete `notebook-0-getting-started.Rmd` first. It covers package installation, creating the `.env` credentials file, and making a test call to confirm everything works. Then complete Notebook 1 before this one.
+
+**Important note about request types:** Notebook 1 (the listings endpoint) uses a POST request, where you submit a search form with your criteria. This notebook's statistics endpoint uses a GET request, where you retrieve a specific record by its URL address.
+
+Mixing up the request type causes the API to return HTTP 200 with a completely empty response, with no data and no error message. The `utils.R` file handles this automatically by building GET and POST requests separately. You just need to know this is why the code uses `tracker$get()` in this notebook instead of `tracker$post()`.
+
+------------------------------------------------------------------------
+
+## Key Terms
+
+**Aggregate statistic:** A single number that summarises many individual data points. The median sale price is one statistic derived from all individual sale prices in a suburb during a period.
+
+**Median:** The middle value when all values are sorted. Half the values are above it, half below. Less affected by extreme values (very expensive or very cheap properties) than an average.
+
+**Quarter:** A three-month period. Q1 = January to March, Q2 = April to June, Q3 = July to September, Q4 = October to December.
+
+**Time series:** Data collected at regular intervals over time. The output of this endpoint is a time series: one row per quarter, going back up to 45 quarters.
+
+**NA (Not Available):** The value R uses when a number is missing or unknown. In this context, an NA in the `medianSoldPrice` column means there were not enough sales in that quarter for the API to calculate a reliable median. This is normal, not an error. (If you have used Python, this is the equivalent of `NaN`.)
+
+**Tibble:** A table of data in R. Rows are time periods (quarters), columns are statistics. It behaves like an Excel spreadsheet and can be filtered, sorted, and charted without making further API calls.
+
+------------------------------------------------------------------------
+
+## How This Endpoint Is Different From the Listings Endpoint
+
+|   | Listings endpoint | Statistics endpoint |
+|----|----|----|
+| **What it returns** | Individual property records | Summary statistics per suburb |
+| **Request type** | POST (submit a search form) | GET (retrieve by address) |
+| **Records per call** | Up to 1,000 (may need cursor) | Exactly one row per time window |
+| **Historical depth** | Back to \~2018 reliably | Up to 45 quarters (\~11 years) |
+| **Cost** | 1 credit per page | 1 credit per suburb-category pair |
+| **Best for** | Individual property analysis | Market trend analysis |
+
+These are two completely separate tools for two different research questions. Many studies will use both.
+
+------------------------------------------------------------------------
+
+## Setup: Check Packages
+
+```{r package-check}
+needed <- c("httr2", "jsonlite", "purrr", "tibble", "dplyr", "readr", "ggplot2")
+missing <- needed[!vapply(needed, requireNamespace, logical(1), quietly = TRUE)]
+
+if (length(missing) > 0) {
+  cat("Missing packages, run in the R console:\n")
+  cat("  install.packages(c(", paste0('"', missing, '"', collapse = ", "), "))\n", sep = "")
+} else {
+  cat("All packages found. Setup OK.\n")
+}
+```
+
+## Setup: Connect to the API
+
+```{r connect}
+library(dplyr)
+library(tibble)
+library(purrr)
+library(readr)
+library(ggplot2)
+
+source("utils.R")
+
+tracker <- make_tracker()
+
+# The statistics endpoint has a different URL path from the listings endpoint
+STATS_BASE <- paste0(PROXY_BASE, "/v2/suburbPerformanceStatistics")
+
+cat("Connected to:", PROXY_BASE, "\n")
+cat("Account:     ", AURIN_USERNAME, "\n")
+cat("Statistics endpoint:", STATS_BASE, "\n")
+```
+
+------------------------------------------------------------------------
+
+## The Statistics Endpoint: What You Can Request
+
+The URL for the statistics endpoint includes the suburb information directly in the address:
+
+```         
+GET /v2/suburbPerformanceStatistics/{state}/{suburb}/{postcode}
+```
+
+For Carlton in Victoria with postcode 3053, that becomes:
+
+```         
+GET /v2/suburbPerformanceStatistics/VIC/Carlton/3053
+```
+
+You also pass several query parameters (options):
+
+| Parameter | What to put | Notes |
+|----|----|----|
+| `propertyCategory` | `House` or `Unit` | Required. Each category needs a separate call. |
+| `periodSize` | `quarters`, `halfYears`, or `years` | Use `quarters` for most market analysis. |
+| `totalPeriods` | 1 to 45 | How many quarters to return. Cost is always 1 credit (always use 45). |
+| `startingPeriodRelativeToCurrent` | 0 = most recent quarter | Leave at 0 unless you have a reason to offset. |
+
+> **`propertyCategory` is limited to `House` or `Unit` on this endpoint.** This is a hard constraint of the statistics API. Unlike the listings endpoint in Notebook 1, which returns many property types (`ApartmentUnitFlat`, `Townhouse`, `Villa`, and so on), the statistics endpoint only aggregates at the House or Unit level. If you need statistics for a specific property type like townhouses, you would need to fetch individual listings from Notebook 1 and calculate your own aggregates.
+
+**Key insight:** fetching `totalPeriods = 45` (11 years of data) costs exactly the same as fetching `totalPeriods = 1` (one quarter). There is no reason ever to request fewer than 45 periods.
+
+------------------------------------------------------------------------
+
+## A Hidden Danger: The Silent Empty Response
+
+If you misspell a suburb name or put in a wrong postcode, the API responds with HTTP 200 (the standard "success" signal) but sends back a completely empty body, with no data and no error message. Your code will not stop with an error. It will just silently collect nothing for that suburb, and the credit is still spent.
+
+The chunk below demonstrates this deliberately using a misspelled suburb name. Watch the output carefully: the status code says 200 (success) but the body is empty.
+
+```{r empty-response-demo}
+# Intentional typo: 'Cralton' instead of 'Carlton'
+# This demonstrates what happens with a wrong suburb name
+bad_suburb   <- "Cralton"  # does not exist
+bad_postcode <- "3053"
+
+# Build the URL. URLencode() makes the suburb name safe to put in a URL.
+bad_url <- paste0(STATS_BASE, "/VIC/", URLencode(bad_suburb, reserved = TRUE), "/", bad_postcode)
+
+bad_params <- list(
+  propertyCategory                = "House",
+  periodSize                      = "quarters",
+  totalPeriods                    = 1,  # keep low for this demo
+  startingPeriodRelativeToCurrent = 0
+)
+
+# Make the request (uses GET, not POST)
+r_bad <- tracker$get(bad_url, params = bad_params)
+tracker$checkpoint("Silent empty response demo")
+
+body_bad <- resp_body_string(r_bad)
+
+cat("Intentional typo:", bad_suburb, "instead of Carlton\n\n")
+cat("HTTP status code:", resp_status(r_bad), " (200 means \"success\" -- misleadingly)\n")
+cat("Body length:", nchar(body_bad), "characters\n")
+cat("Body content: \"", trimws(body_bad), "\"\n\n", sep = "")
+cat("The server said success, but sent nothing back.\n")
+cat("The credit was still consumed.\n")
+```
+
+### The guard check: detecting an empty response
+
+Every function that calls the statistics endpoint should include this check immediately after receiving the response:
+
+``` r
+if (resp_status(r) == 200 && !nzchar(trimws(resp_body_string(r)))) {
+  cat("  [", suburb, "] Empty response -- check the suburb name and postcode.\n")
+  return(NULL)  # stop and return nothing rather than raising an error
+}
+```
+
+**The first condition** confirms the server said "success" (status code 200). **The second** checks whether any data was actually returned. `nzchar()` means "non-zero characters", so `!nzchar(trimws(...))` is TRUE when the body is blank.
+
+If both conditions are true, the response is a silent empty. Print a warning and skip that suburb rather than recording a blank result.
+
+Returning `NULL` rather than raising an error is intentional and important. When you are fetching a list of suburbs in a loop, a single bad suburb name should not stop the entire run. The loop checks whether the return value is `NULL` and skips that suburb, while all successfully fetched suburbs continue to be collected and saved. This means only the one failed suburb needs to be re-run once you have corrected the spelling, not the whole list again, and without spending credits on suburbs you already have.
+
+------------------------------------------------------------------------
+
+## Fetching Statistics for One Suburb
+
+The `get_suburb_stats()` function below encapsulates all the steps: builds the URL, sends the GET request, checks for the silent empty response, and returns the parsed data.
+
+Run the chunk to define the function. You will call it by name in the next step.
+
+```{r get-suburb-stats}
+VALID_STATES     <- c("ACT", "NSW", "QLD", "VIC", "SA", "WA", "NT", "TAS")
+VALID_CATEGORIES <- c("House", "Unit")
+
+# Maps a lowercased period size to the spelling the API expects. This lets the
+# function accept 'halfyears', 'halfYears', or 'HALFYEARS' while still sending
+# the API the exact casing it documents.
+PERIOD_SIZES <- c(quarters = "quarters", halfyears = "halfYears", years = "years")
+
+# R has no built-in "capitalise" function, so this makes one:
+# 'house' and 'HOUSE' both become 'House'.
+capitalise <- function(x) {
+  paste0(toupper(substr(x, 1, 1)), tolower(substr(x, 2, nchar(x))))
+}
+
+get_suburb_stats <- function(suburb, state, postcode,
+                             property_category = "House",
+                             period_size       = "quarters",
+                             total_periods     = 45,
+                             starting_period   = 0,
+                             tracker) {
+  # suburb:            suburb name (must match Domain's spelling exactly).
+  # state:             state code, e.g. 'VIC'. Case is ignored, 'vic' and 'VIC' both work.
+  # postcode:          four-digit postcode as a string, e.g. '3053'.
+  # property_category: 'House' or 'Unit'. Case is ignored.
+  # period_size:       'quarters', 'halfYears', or 'years'. Case is ignored.
+  # total_periods:     whole number between 1 and 45. Always use 45 to maximise
+  #                    data for the same credit cost.
+  # starting_period:   0 = most recent period; leave at 0 unless offsetting.
+  #
+  # Returns the API response as an R list, or NULL if validation fails,
+  # the request failed, or the response was empty.
+
+  # --- Input validation (all checks run before any API call is made) ---
+
+  state             <- toupper(state)
+  property_category <- capitalise(property_category)
+  period_key        <- tolower(period_size)
+
+  if (!state %in% VALID_STATES) {
+    cat("  [", suburb, "] Invalid state \"", state, "\". Must be one of: ",
+        paste(sort(VALID_STATES), collapse = ", "), "\n", sep = "")
+    return(NULL)
+  }
+
+  if (!property_category %in% VALID_CATEGORIES) {
+    cat("  [", suburb, "] Invalid property_category \"", property_category,
+        "\". Must be \"House\" or \"Unit\".\n", sep = "")
+    return(NULL)
+  }
+
+  if (!period_key %in% names(PERIOD_SIZES)) {
+    cat("  [", suburb, "] Invalid period_size \"", period_size,
+        "\". Must be \"quarters\", \"halfYears\", or \"years\".\n", sep = "")
+    return(NULL)
+  }
+  period_size <- PERIOD_SIZES[[period_key]]  # the spelling the API expects
+
+  if (!is.numeric(total_periods) || length(total_periods) != 1 ||
+      total_periods != round(total_periods) ||
+      total_periods < 1 || total_periods > 45) {
+    cat("  [", suburb, "] Invalid total_periods \"", total_periods,
+        "\". Must be a whole number between 1 and 45.\n", sep = "")
+    return(NULL)
+  }
+
+  if (!is.numeric(starting_period) || length(starting_period) != 1 ||
+      starting_period != round(starting_period) || starting_period < 0) {
+    cat("  [", suburb, "] Invalid starting_period \"", starting_period,
+        "\". Must be a non-negative whole number.\n", sep = "")
+    return(NULL)
+  }
+
+  # --- Build and send the request ---
+
+  # URLencode() encodes multi-word suburb names (e.g. 'South Yarra') so they do
+  # not break the URL
+  url <- paste0(STATS_BASE, "/", state, "/",
+                URLencode(suburb, reserved = TRUE), "/", postcode)
+
+  params <- list(
+    propertyCategory                = property_category,
+    periodSize                      = period_size,
+    totalPeriods                    = total_periods,
+    startingPeriodRelativeToCurrent = starting_period
+  )
+
+  # Use GET (not POST) for this endpoint
+  r <- tracker$get(url, params = params)
+
+  # Guard: detect the silent empty response (wrong suburb name or postcode)
+  if (resp_status(r) == 200 && !nzchar(trimws(resp_body_string(r)))) {
+    cat("  [", suburb, "] Empty response -- check suburb name and postcode.\n", sep = "")
+    return(NULL)
+  }
+
+  if (resp_status(r) != 200) {
+    cat("  [", suburb, "] HTTP ", resp_status(r), ": ",
+        substr(resp_body_string(r), 1, 120), "\n", sep = "")
+    return(NULL)
+  }
+
+  resp_body_json(r, simplifyVector = FALSE)
+}
+
+cat("get_suburb_stats defined.\n")
+```
+
+### Convert the response to a table
+
+The API response is a nested list (data inside data inside data). The `series_to_df()` function below unpacks it into a flat table with one row per quarter.
+
+A tibble is like an Excel spreadsheet in R: rows are time periods, columns are statistics. Once data is in a tibble, all filtering, sorting, and charting happens locally, no more API calls needed.
+
+```{r series-to-df}
+series_to_df <- function(api_response, suburb_name) {
+  # api_response: the list returned by get_suburb_stats().
+  # suburb_name:  a label to add as a column so multiple suburbs can be combined.
+  #
+  # Returns a tibble with one row per period. Fields the API did not report
+  # for a given period appear as NA (see the 'Handling Missing Values'
+  # section later in this notebook for what to do with these).
+
+  # The statistics live inside a nested structure: response -> series -> seriesInfo
+  if (is.null(api_response) || is.null(api_response$series)) {
+    return(tibble())  # return an empty table if there is nothing to convert
+  }
+
+  rows <- lapply(api_response$series$seriesInfo, function(entry) {
+    # The 'values' element holds all the statistics for this period
+    # (medianSoldPrice, numberSold, daysOnMarket, and so on).
+    #
+    # A statistic the API did not report for this period arrives as NULL. In R a
+    # NULL inside a list disappears when the row is built, which would give this
+    # row fewer columns than the others, so convert NULLs to NA first.
+    values <- entry$values
+    if (length(values) > 0) {
+      values <- lapply(values, \(v) if (is.null(v) || length(v) == 0) NA else v)
+    } else {
+      values <- list()
+    }
+
+    row <- c(
+      list(
+        suburb = suburb_name,
+        year   = entry$year,   # the year of this period
+        month  = entry$month,  # the starting month of this period
+        # Build a proper date from year and month so charts have a real time axis
+        date   = as.Date(sprintf("%d-%02d-01", entry$year, entry$month))
+      ),
+      values
+    )
+
+    as_tibble(row)
+  })
+
+  # bind_rows fills any column a period was missing with NA.
+  # Sort oldest to newest so charts display correctly.
+  bind_rows(rows) |> arrange(date)
+}
+
+cat("series_to_df defined.\n")
+```
+
+### Fetch Carlton: 45 quarters in one call
+
+The chunk below fetches 45 quarters of house statistics for Carlton 3053. **This costs 1 credit.**
+
+No `property_category` is passed, so it defaults to `"House"`. To get Unit statistics for the same suburb, you would make a second call with `property_category = "Unit"`, and that costs another credit.
+
+**Expected output:** a table with roughly 40 to 45 rows (the API returns however many quarters of data it has, up to your requested maximum). Columns include `suburb`, `year`, `month`, `date`, and several statistical fields.
+
+```{r fetch-carlton}
+# Fetch 45 quarters of house statistics for Carlton (1 credit)
+carlton_data <- get_suburb_stats("Carlton", "VIC", "3053", total_periods = 45,
+                                 tracker = tracker)
+tracker$checkpoint("Carlton (45 quarters)")
+
+if (!is.null(carlton_data)) {
+  df_carlton <- series_to_df(carlton_data, "Carlton")
+
+  cat("Carlton:", nrow(df_carlton), "quarters returned\n")
+  cat("Earliest quarter:", format(min(df_carlton$date), "%Y-%m"), "\n")
+  cat("Latest quarter:  ", format(max(df_carlton$date), "%Y-%m"), "\n\n")
+  cat("Columns in the dataset:\n")
+  for (col in names(df_carlton)) cat("  ", col, "\n")
+  cat("\n")
+  knitr::kable(head(df_carlton, 5))
+}
+```
+
+### Understanding the output table
+
+The key statistical columns are:
+
+- **`medianSoldPrice`:** the median sale price for all properties sold in that quarter.
+- **`numberSold`:** how many properties sold.
+- **`daysOnMarket`:** the median number of days between listing and sale.
+- **`medianRentListingPrice`:** the median asking rent for rental listings.
+
+Some of these columns may show `NA` (missing) for some quarters. This means there were not enough transactions in that quarter for the API to report a reliable statistic. It is not an error. See the section on handling missing values later in this notebook.
+
+------------------------------------------------------------------------
+
+## Fetching Multiple Suburbs Efficiently
+
+Fetching six suburbs with 45 quarters each costs **6 credits total**. If you had instead fetched 1 quarter at a time and gone back 45 periods, the same data would have cost 6 x 45 = 270 credits.
+
+The chunk below loops over a list of suburbs and combines all results into one table. A message is printed after each suburb so you can follow progress.
+
+```{r fetch-six-suburbs}
+# List of suburbs to fetch: suburb name, state, postcode
+SUBURBS <- list(
+  list("Carlton",     "VIC", "3053"),
+  list("Fitzroy",     "VIC", "3065"),
+  list("Richmond",    "VIC", "3121"),
+  list("Brunswick",   "VIC", "3056"),
+  list("Northcote",   "VIC", "3070"),
+  list("Collingwood", "VIC", "3066")
+)
+
+all_dfs <- list()  # collect one table per suburb
+
+for (entry in SUBURBS) {
+  suburb   <- entry[[1]]
+  state    <- entry[[2]]
+  postcode <- entry[[3]]
+
+  data <- get_suburb_stats(suburb, state, postcode, total_periods = 45,
+                           tracker = tracker)
+  if (!is.null(data)) {
+    df <- series_to_df(data, suburb)
+    all_dfs[[length(all_dfs) + 1]] <- df
+    cat("  ", suburb, ": ", nrow(df), " quarters fetched.\n", sep = "")
+  } else {
+    cat("  ", suburb, ": no data returned (check suburb name and postcode).\n", sep = "")
+  }
+}
+
+tracker$checkpoint("Six-suburb fetch (45 quarters each)")
+
+# Combine all tables into one big table
+df_all <- bind_rows(all_dfs)
+
+cat("\nCombined dataset: ", format(nrow(df_all), big.mark = ","),
+    " rows (", length(SUBURBS), " suburbs x ~45 quarters)\n", sep = "")
+cat("API calls made for this section:", length(SUBURBS), "\n")
+cat("Equivalent cost if fetched one quarter at a time:", length(SUBURBS) * 45, "credits\n")
+cat("Actual cost:                                     ", length(SUBURBS), "credits\n")
+cat("Total API calls so far:", tracker$total(), "\n")
+```
+
+------------------------------------------------------------------------
+
+## Save Your Results
+
+Before doing any analysis, save the combined dataset to a CSV file.
+
+Data fetched from the API only exists in memory while the R session is running. If R crashes, you restart the session, or your computer shuts down, that data is gone and you will need to call the API again, spending credits you have already used. Saving immediately after every fetch protects your work.
+
+Run the chunk below to save.
+
+```{r save-csv}
+# If you save somewhere other than this folder, give the full path, using
+# forward slashes (/) or doubled backslashes (\\). A pasted Windows path with
+# single backslashes may not work.
+output_filename <- "inner_melbourne_suburb_statistics.csv"
+write_csv(df_all, output_filename)
+
+cat("Saved:  ", output_filename, "\n")
+cat("Rows:   ", format(nrow(df_all), big.mark = ","), "\n")
+cat("Columns:", paste(names(df_all), collapse = ", "), "\n")
+```
+
+------------------------------------------------------------------------
+
+## Creating Charts From the Data
+
+All the analysis below uses the data already downloaded. No more API calls are made. This is why fetching maximum historical depth upfront is always the right strategy: you spend the same credits, but you get far more analytical flexibility.
+
+### Chart 1: Median Sale Price Over Time
+
+The next chunk draws a line for each suburb showing how the median sale price changed quarter by quarter. Quarters with no reported price (NA) are dropped first, so a line may have small gaps in low-volume periods.
+
+```{r chart-prices}
+if ("medianSoldPrice" %in% names(df_all)) {
+  # Drop rows where price is missing, you cannot plot a missing value
+  df_prices <- df_all |> filter(!is.na(medianSoldPrice))
+
+  ggplot(df_prices, aes(x = date, y = medianSoldPrice / 1e6, colour = suburb)) +
+    geom_line() +
+    geom_point(size = 0.9) +
+    scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+    labs(
+      title  = "Median House Sale Price by Quarter, Inner Melbourne",
+      x      = "Quarter",
+      y      = "Median sale price (AUD millions)",
+      colour = NULL
+    ) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+} else {
+  cat("Column \"medianSoldPrice\" not found in the data.\n")
+  cat("Available columns:", paste(names(df_all), collapse = ", "), "\n")
+}
+```
+
+### Chart 2: Quarterly Transaction Volume
+
+The number of properties sold per quarter reveals seasonal patterns and how market activity has changed over time across different suburbs.
+
+```{r chart-volume}
+if ("numberSold" %in% names(df_all)) {
+  df_vol <- df_all |> filter(!is.na(numberSold))
+
+  ggplot(df_vol, aes(x = date, y = numberSold, colour = suburb)) +
+    geom_line() +
+    geom_point(size = 0.9) +
+    scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+    labs(
+      title  = "Quarterly Transactions by Suburb, Inner Melbourne",
+      x      = "Quarter",
+      y      = "Number of properties sold",
+      colour = NULL
+    ) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+} else {
+  cat("Column \"numberSold\" not found.\n")
+  cat("Available columns:", paste(names(df_all), collapse = ", "), "\n")
+}
+```
+
+------------------------------------------------------------------------
+
+## Handling Missing Values (NA Periods)
+
+Some rows in the data have `NA` (Not Available) for certain columns. This means there were not enough transactions in that quarter for the API to calculate a reliable statistic. This is especially common for:
+
+- Smaller suburbs with few transactions
+- Quieter property categories (e.g. Units in a suburb that mainly has houses)
+- Quarters at the beginning of the historical record when coverage was thinner
+
+**NA is not a bug.** Treat it as "not enough data to report," not as zero.
+
+The chunk below measures how often each key column has data (completeness) and shows how to create a clean version of the dataset by removing incomplete rows.
+
+```{r completeness}
+# Measure completeness: what percentage of quarters have a value for each column?
+key_cols <- intersect(c("medianSoldPrice", "numberSold", "daysOnMarket"), names(df_all))
+
+if (length(key_cols) > 0) {
+  completeness <- df_all |>
+    group_by(suburb) |>
+    summarise(
+      across(all_of(key_cols), \(x) round(mean(!is.na(x)) * 100, 1)),
+      .groups = "drop"
+    )
+
+  cat("Completeness by suburb (% of quarters with a reported value):\n\n")
+  knitr::kable(completeness)
+}
+```
+
+```{r clean-dataset}
+# Create a clean version of the dataset by removing quarters with missing key values.
+# This is appropriate for trend analysis where you need continuous data.
+drop_cols <- intersect(c("medianSoldPrice", "numberSold"), names(df_all))
+
+if (length(drop_cols) > 0) {
+  # Keep only rows where none of the listed columns is missing
+  df_clean <- df_all |> filter(if_all(all_of(drop_cols), \(x) !is.na(x)))
+
+  cat("Full dataset rows: ", format(nrow(df_all),   big.mark = ","), "\n")
+  cat("Clean dataset rows:", format(nrow(df_clean), big.mark = ","),
+      " (dropped ", format(nrow(df_all) - nrow(df_clean), big.mark = ","),
+      " rows with missing values)\n", sep = "")
+  cat("\n")
+  cat("Use df_clean for trend analysis.\n")
+  cat("Keep df_all if you need to analyse data availability patterns.\n")
+}
+```
+
+------------------------------------------------------------------------
+
+## What If Something Goes Wrong?
+
+**Empty response for a suburb ("check suburb name and postcode"):** The suburb name must match Domain's spelling exactly, including capitalisation and spaces. Check the suburb name on the Domain website by searching for a property in that suburb and noting how Domain spells it.
+
+**All columns are NA for a suburb:** The suburb and property category combination may have too few transactions for any quarter. Try changing `property_category` from "House" to "Unit" or vice versa. Some suburbs are predominantly one type.
+
+**Chart shows no lines or a blank chart:** This usually means all values in the column are NA. Check the completeness output above. If every suburb shows 0% completeness for a column, that column may not be available for your combination of suburb and property category.
+
+**Credentials error (account not found):** Check your `.env` file in the main `domain_api` folder. Confirm `AURIN_USERNAME` and `AURIN_PASSWORD` are correct.
+
+------------------------------------------------------------------------
+
+## What's Next: Notebook 3
+
+You can now pull suburb performance statistics for multiple suburbs efficiently, with years of quarterly data in a handful of credits, ready to chart and analyse without making another API call.
+
+**Notebook 3** goes back to individual listings, but covers two advanced retrieval techniques. The first is cursor advancement, for areas with more than 1,000 listings where simple pagination silently truncates results. The second is checkpoint recovery, for large multi-suburb runs that need to survive interruptions without losing progress or re-spending credits.
+
+Open `notebook-3-pagination-tricks.Rmd` to continue.
+
+------------------------------------------------------------------------
+
+## Credit Summary
+
+```{r credit-summary}
+tracker$summary()
+```

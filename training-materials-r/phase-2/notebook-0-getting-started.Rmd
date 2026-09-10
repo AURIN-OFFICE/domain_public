@@ -1,0 +1,406 @@
+---
+title: "Notebook 0: Getting Started"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+```
+
+This notebook has one job: get your computer connected to the Domain API
+and pull back real data.
+
+By the end, you will have run a successful query and seen live property
+market statistics for a Melbourne suburb. Everything in Notebooks 1 to 4
+builds on exactly what you do here.
+
+**No prior programming experience is assumed** beyond being able to open
+RStudio and run a code chunk.
+
+------------------------------------------------------------------------
+
+## What You Will Need
+
+Check that you have these four things before running anything:
+
+- **R, version 4.1 or later.** The notebooks use R's native pipe (`|>`)
+  and the short lambda syntax (`\(x)`), both of which need 4.1 or newer.
+  Type `R.version.string` in the console to check. If you do not have R
+  yet, the [Data Access Guide](../phase-1/01-data-access-guide.md) has a
+  step-by-step setup checklist at the bottom.
+- **RStudio** (recommended). It gives you a Run button for each chunk
+  and a Knit button to turn this notebook into an HTML report. You can
+  also run these files from VS Code or the plain R console.
+- **Your AURIN username and password.** These are the same credentials
+  you use to log in at [data.aurin.org.au](https://data.aurin.org.au).
+  If you have not signed the Domain API access agreement yet, do that
+  first; the Data Access Guide walks you through it.
+- **`utils.R` in the same folder as this notebook.** This is a helper
+  file that handles authentication and tracks your API credit usage. If
+  you downloaded this notebook on its own, you will also need to
+  download `utils.R` from the same source and place it in the same
+  folder. If you are working from the full project folder, it is already
+  there.
+
+------------------------------------------------------------------------
+
+## Step 1: Install the Required Packages
+
+Packages are add-ons that give R extra abilities. You only need to
+install them once.
+
+The easiest way is to run the `install-packages.R` file that sits next
+to this notebook. In RStudio, open it and click **Source**. From a
+terminal, run:
+
+```         
+Rscript install-packages.R
+```
+
+It takes a few minutes the first time. The packages it installs are:
+
+- `httr2`: sends questions to the API and receives answers back
+- `jsonlite`: reads the API's answers, which arrive in a format called
+  JSON
+- `dplyr`, `tibble`, `purrr`: organise data into neat tables
+- `readr`: saves your results to a CSV file
+- `ggplot2`, `leaflet`: draw the charts and maps in later notebooks
+
+If a package is already installed it is skipped, so it is safe to
+re-run.
+
+Then run the chunk below to confirm everything is in place.
+
+```{r package-check}
+# Run this chunk first.
+# If anything is missing, the output will tell you exactly what to install.
+
+needed <- c("httr2", "jsonlite", "purrr", "tibble", "dplyr", "readr")
+missing <- needed[!vapply(needed, requireNamespace, logical(1), quietly = TRUE)]
+
+if (length(missing) > 0) {
+  cat("Some packages are missing:", paste(missing, collapse = ", "), "\n\n")
+  cat("Run this in the R console:\n\n")
+  cat("  install.packages(c(", paste0('"', missing, '"', collapse = ", "), "))\n\n", sep = "")
+  cat("Or open install-packages.R and click Source. Then re-run this chunk.\n")
+} else {
+  cat("All packages found. You are good to go.\n")
+}
+```
+
+------------------------------------------------------------------------
+
+## Step 2: Save Your Credentials
+
+Your AURIN username and password need to be available to your code, but
+you should never type them directly into a notebook. Notebooks can
+accidentally get shared or uploaded to GitHub.
+
+Instead, you store them in a plain text file called `.env` (the dot at
+the start is intentional, there is no `.txt` extension). This file stays
+on your computer and is not included in your notebook, so it will not be
+shared if you send the notebook to someone else.
+
+**Where to create it:** in the same folder as this notebook, or any
+folder above it. A good practice is to keep it in your project's
+top-level folder so all your notebooks can share the one file.
+
+**How to create it:**
+
+1.  Open the folder where you want to keep the file
+2.  Create a new plain text file called `.env`
+    - On **Windows**: open Notepad, then use File, Save As and choose
+      "All Files" as the file type. Name it `.env`.
+    - On **Mac**: open TextEdit, go to Format, Make Plain Text, then
+      save as `.env`.
+    - In **RStudio**: File, New File, Text File, then save it as `.env`.
+3.  Paste these two lines into the file, replacing the example values
+    with your real AURIN credentials:
+
+```         
+AURIN_USERNAME=your.email@university.edu.au
+AURIN_PASSWORD=your_aurin_password
+```
+
+4.  Save and close the file.
+
+> **If you are using Git:** add `.env` to your `.gitignore` file so it
+> is never accidentally committed and uploaded to GitHub.
+
+------------------------------------------------------------------------
+
+## Step 3: Connect to the API
+
+Think of this like signing in to a library. You show your card once at
+the start and then you can borrow books freely for the rest of your
+visit.
+
+The notebooks use a helper file called `utils.R` that handles two
+things: reading your credentials from the `.env` file, and counting how
+many API credits you use. It must be in the same folder as this notebook
+(see *What You Will Need* above).
+
+Running the chunk below will:
+
+1.  Read your credentials from the `.env` file
+2.  Set up a connection to the Domain API through the AURIN proxy
+3.  Print your account name so you can confirm the right credentials
+    were loaded
+
+You need to do this once every time you open the notebook.
+
+You will see output similar to this, but with your own email address:
+
+```         
+Connected to: https://domain.api.aurin.org.au
+Logged in as: your.email@university.edu.au
+
+Setup looks good. Ready to make your first call.
+```
+
+```{r connect}
+# source() runs another R file and makes its functions available here.
+# utils.R reads your .env file automatically when it is sourced.
+source("utils.R")
+
+# The tracker does two things:
+#   1. Adds your credentials to every request automatically
+#   2. Keeps count of how many credits you have used this session
+tracker <- make_tracker()
+
+cat("Connected to:", PROXY_BASE, "\n")
+cat("Logged in as:", AURIN_USERNAME, "\n\n")
+cat("Setup looks good. Ready to make your first call.\n")
+```
+
+> **If this chunk stops with an error** saying
+> `AURIN_USERNAME / AURIN_PASSWORD not found in .env`, your `.env` file
+> is missing or in the wrong place. The error message prints the folder
+> it searched, so you can see exactly where to put the file. See the
+> Troubleshooting section at the bottom.
+
+------------------------------------------------------------------------
+
+## Step 4: Make Your First API Call
+
+We are going to ask the Domain API for one quarter (3 months) of market
+statistics for Carlton, VIC.
+
+Think of it like this: your code sends a question to Domain's server.
+The server checks your credentials, looks up the data, and sends the
+answer back. The whole thing takes about one second.
+
+We are asking for:
+
+- **Suburb:** Carlton, VIC (postcode 3053)
+- **Property type:** Houses
+- **Time period:** the most recent quarter only
+
+**This will cost 1 credit.** Run the chunk below.
+
+```{r first-call}
+# The URL tells the API which suburb we want.
+# Format: /v2/suburbPerformanceStatistics/{state}/{suburb}/{postcode}
+url <- paste0(PROXY_BASE, "/v2/suburbPerformanceStatistics/VIC/Carlton/3053")
+
+# These parameters say what kind of data we want
+params <- list(
+  propertyCategory = "House",   # "House" or "Unit"
+  periodSize       = "quarters", # group data into 3-month periods
+  totalPeriods     = 1           # just the most recent period for this test
+)
+
+# Send the request and store the response
+response <- tracker$get(url, params = params)
+tracker$checkpoint("First test call")
+
+# Check the status code: 200 means success
+status <- resp_status(response)
+cat("Status:", status, "\n")
+
+if (status == 200) {
+  body <- resp_body_string(response)
+  cat("Data received:", format(nchar(body), big.mark = ","), "characters\n\n")
+  cat("It worked. Run the next chunk to see the actual numbers.\n")
+} else if (status == 401) {
+  cat("Your credentials were not accepted.\n")
+  cat("Check AURIN_USERNAME and AURIN_PASSWORD in your .env file.\n")
+} else if (status == 403) {
+  cat("Access denied.\n")
+  cat("Either the Domain API access agreement is not signed,\n")
+  cat("or your monthly credits ran out.\n")
+  cat("Log in to data.aurin.org.au and check: Manage Access -> API Access.\n")
+} else {
+  cat("Unexpected response:", substr(resp_body_string(response), 1, 300), "\n")
+}
+```
+
+------------------------------------------------------------------------
+
+## Step 5: Look at the Data
+
+The API sent back a chunk of text in a format called JSON. Think of JSON
+as a structured list of labelled values, a bit like a form that has been
+filled in.
+
+R reads JSON as a nested list. The chunk below digs into it and prints
+the numbers in plain English.
+
+You will see output similar to this, but the figures will reflect the
+most recent quarter available at the time you run it:
+
+```         
+Carlton, VIC -- most recent quarter: 2026, month 3
+
+  Median sale price:  $1,305,000
+  Properties sold:    18
+  Days on market:     not reported
+```
+
+"Not reported" means there were not enough sales that quarter for the
+API to publish a reliable figure.
+
+```{r read-data}
+# Parse the raw response text into an R list.
+# simplifyVector = FALSE keeps the nested structure, which is easier to navigate.
+data <- resp_body_json(response, simplifyVector = FALSE)
+
+# Dig into the structure to find the most recent quarter
+entries <- data$series$seriesInfo
+
+if (length(entries) == 0) {
+  cat("The response came back empty.\n")
+  cat("This usually means the suburb name or postcode was wrong.\n")
+  cat("Carlton / 3053 should always return data -- re-check the connection chunk above.\n")
+} else {
+  latest <- entries[[length(entries)]]  # last entry = most recent quarter
+  year   <- latest$year
+  month  <- latest$month
+
+  # field() returns NA instead of NULL when the API did not report a value,
+  # which is what makes the checks below straightforward.
+  median_price   <- field(latest, "values", "medianSoldPrice")
+  number_sold    <- field(latest, "values", "numberSold")
+  days_on_market <- field(latest, "values", "daysOnMarket")
+
+  cat("Carlton, VIC -- most recent quarter:", year, ", month", month, "\n\n")
+
+  # NA means there were not enough sales that quarter for the API to report a number
+  if (!is.na(median_price)) {
+    cat("  Median sale price:  $",
+        formatC(round(median_price), format = "d", big.mark = ","), "\n", sep = "")
+  } else {
+    cat("  Median sale price:  not reported this quarter\n")
+  }
+
+  if (!is.na(number_sold)) {
+    cat("  Properties sold:   ", number_sold, "\n")
+  } else {
+    cat("  Properties sold:    not reported\n")
+  }
+
+  if (!is.na(days_on_market)) {
+    cat("  Days on market:    ", days_on_market, "\n")
+  } else {
+    cat("  Days on market:     not reported\n")
+  }
+
+  cat("\nThese numbers come directly from the live Domain API.\n")
+}
+```
+
+------------------------------------------------------------------------
+
+## About Credits
+
+Every request you send to the API costs **1 credit**. Your AURIN account
+gets **1,000 credits per month**. They reset automatically on the 1st of
+each calendar month, you do not need to do anything.
+
+1,000 sounds like a lot, but it goes quickly if you query without
+planning first. For example, pulling one year of sold listings across a
+single busy suburb like South Yarra can take 20 to 30 credits on its
+own.
+
+The golden rule: **design your research question before you start
+querying.** The [Credit Calculator
+guide](../phase-1/03-credit-calculator.md) shows you how to estimate
+your total cost before running anything large.
+
+You can check your remaining credits at any time: log in to
+[data.aurin.org.au](https://data.aurin.org.au), go to **Manage Access**,
+then **API Access**, and look at the Domain Access section.
+
+The chunk below shows how many credits this session has used so far.
+
+```{r credit-summary}
+tracker$summary()
+```
+
+------------------------------------------------------------------------
+
+## Troubleshooting
+
+**`Error in file(filename, "r", encoding = encoding) : cannot open the connection`**
+(from `source("utils.R")`) The `utils.R` file is not in the same folder
+as this notebook. Download it from the same source as the notebook and
+place it in the same folder, then re-run the chunk. In RStudio, check
+that the working directory matches the notebook's folder: run `getwd()`
+in the console. If you point R at a folder yourself with `setwd()`, note
+that a pasted path may not work as is: depending on the operating system
+you are using, Windows gives backslashes (`C:\Users\you\project`) and
+Mac or Linux give forward slashes (`/Users/you/project`). In R, use
+forward slashes (`setwd("C:/Users/you/project")`) or doubled backslashes
+(`setwd("C:\\Users\\you\\project")`).
+
+**`Error: AURIN_USERNAME / AURIN_PASSWORD not found in .env`** Your
+`.env` file is missing or cannot be found. It needs to be in the same
+folder as this notebook, or in a folder above it. The error message
+prints the folder it searched. Also double-check the file name: it
+starts with a dot (`.env`) and has no other extension, so `.env.txt`
+will not work.
+
+**`Status: 200` but the response came back empty** The suburb name or
+postcode was wrong. Carlton / 3053 should always return data. If it does
+not, re-run the connection chunk and try the call again.
+
+**`Status: 401`** Your credentials were not accepted. Open the `.env`
+file and check:
+
+- No extra spaces before or after the `=`
+- No extra spaces at the beginning or end of the password
+- The email address matches exactly what you use to log in to AURIN
+
+**`Status: 403`** Two possible causes:
+
+1.  You have not signed the Domain API access agreement. Log in to
+    data.aurin.org.au, then Manage Access, then My Agreements.
+2.  Your monthly credits have run out. Check the dashboard.
+
+**`there is no package called 'httr2'`** (or `jsonlite`, `purrr`,
+`tibble`) A required package is not installed. Run
+`Rscript install-packages.R` in your terminal, or open
+`install-packages.R` in RStudio and click Source, then re-run the
+package check chunk.
+
+------------------------------------------------------------------------
+
+## What's Next: Let's Move to Notebook 1
+
+You have connected to the API and pulled real data back. The pattern you
+just used (build a URL, send a request, check the status, read the
+result) is the same pattern used in every notebook that follows.
+
+**Notebook 1** covers the listings endpoint: the main data source on the
+Domain API. It returns individual property records, one per property,
+with fields like address, price, listing date, and property type. You
+will learn how to structure a request, apply filters, and retrieve all
+pages of results.
+
+Open `notebook-1-listings-search.Rmd` to continue.
