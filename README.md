@@ -26,9 +26,9 @@ beyond reading the guides and actually run your own queries, you will need:
   so it pays to know what you are looking for before you start pulling data.
 - **A willingness to run notebooks, in either Python or R.** No prior programming experience needed.
   The material comes in two parallel tracks that teach the same things, so pick whichever language you
-  already work in: [`phase-1-python`](training-materials/phase-1-python/) and
-  [`phase-2-python`](training-materials/phase-2-python/), or
-  [`phase-1-r`](training-materials/phase-1-r/) and [`phase-2-r`](training-materials/phase-2-r/).
+  already work in: [`python-phase-1`](training-materials/python-phase-1/) and
+  [`python-phase-2`](training-materials/python-phase-2/), or
+  [`r-phase-1`](training-materials/r-phase-1/) and [`r-phase-2`](training-materials/r-phase-2/).
   Each track's phase-1 guides walk you through every step, including installing the language for the
   first time.
 
@@ -51,8 +51,8 @@ Two things are important to understand up front:
 - **Every query costs 1 credit.** Each account gets **1,000 credits per month**, which reset
   automatically on the 1st of each month. Treat this like a monthly budget: design your question first,
   then query. The Credit Calculator guide
-  ([Python](training-materials/phase-1-python/03-credit-calculator.md) /
-  [R](training-materials/phase-1-r/03-credit-calculator.md)) shows how to estimate a query's cost
+  ([Python](training-materials/python-phase-1/03-credit-calculator.md) /
+  [R](training-materials/r-phase-1/03-credit-calculator.md)) shows how to estimate a query's cost
   before you run it.
 
 
@@ -62,10 +62,10 @@ Two things are important to understand up front:
 
 | | Python track | R track |
 |---|---|---|
-| Guides (phase 1) | [`phase-1-python`](training-materials/phase-1-python/) | [`phase-1-r`](training-materials/phase-1-r/) |
-| Notebooks (phase 2) | [`phase-2-python`](training-materials/phase-2-python/) | [`phase-2-r`](training-materials/phase-2-r/) |
+| Guides (phase 1) | [`python-phase-1`](training-materials/python-phase-1/) | [`r-phase-1`](training-materials/r-phase-1/) |
+| Notebooks (phase 2) | [`python-phase-2`](training-materials/python-phase-2/) | [`r-phase-2`](training-materials/r-phase-2/) |
 | Notebook format | Jupyter (`.ipynb`) | R Markdown (`.Rmd`), open in RStudio |
-| Beginner checklist | [Data Access Guide](training-materials/phase-1-python/01-data-access-guide.md) | [Data Access Guide](training-materials/phase-1-r/01-data-access-guide.md) |
+| Beginner checklist | [Data Access Guide](training-materials/python-phase-1/01-data-access-guide.md) | [Data Access Guide](training-materials/r-phase-1/01-data-access-guide.md) |
 
 Then follow these steps in order.
 
@@ -82,13 +82,13 @@ Then follow these steps in order.
 3. **Install the required packages.**
    - *Python:* install the packages the notebooks import, for example with
      `pip install requests pandas python-dotenv geopandas`.
-   - *R:* open [`training-materials/phase-2-r/install-packages.R`](training-materials/phase-2-r/install-packages.R)
+   - *R:* open [`training-materials/r-phase-2/install-packages.R`](training-materials/r-phase-2/install-packages.R)
      in RStudio and click **Source**, or run `Rscript install-packages.R` from that folder.
 
 4. **Sign the AURIN Domain agreement and find your credentials.** This is a one-time online step inside
    the AURIN Data Provider. The Data Access Guide for your track
-   ([Python](training-materials/phase-1-python/01-data-access-guide.md) /
-   [R](training-materials/phase-1-r/01-data-access-guide.md))
+   ([Python](training-materials/python-phase-1/01-data-access-guide.md) /
+   [R](training-materials/r-phase-1/01-data-access-guide.md))
    walks you through it with screenshots, and shows where to see your credit balance.
 
 5. **Create a `.env` file for your credentials.** In the folder you run the notebooks from, create a
@@ -102,8 +102,8 @@ Then follow these steps in order.
    > This file keeps your password out of your code. Never commit it to git.
 
 6. **Run your first notebook.** Open notebook 0 for your track:
-   [Python](training-materials/phase-2-python/notebook-0-getting-started.ipynb) in Jupyter, or
-   [R](training-materials/phase-2-r/notebook-0-getting-started.Rmd) in RStudio.
+   [Python](training-materials/python-phase-2/notebook-0-getting-started.ipynb) in Jupyter, or
+   [R](training-materials/r-phase-2/notebook-0-getting-started.Rmd) in RStudio.
    Run the cells (Python) or chunks (R). A successful test query returns a status of `200`, confirming
    your setup works.
 
@@ -114,12 +114,12 @@ Work through the material roughly in this order, in whichever language track you
 
 | Start here when...                              | Python                                                                            | R                                                                            |
 |-------------------------------------------------|-----------------------------------------------------------------------------------|------------------------------------------------------------------------------|
-| You are brand new and want the big picture      | [00 Getting Started](training-materials/phase-1-python/00-getting-started.md)      | [00 Getting Started](training-materials/phase-1-r/00-getting-started.md)      |
-| You are setting up access for the first time    | [01 Data Access Guide](training-materials/phase-1-python/01-data-access-guide.md)  | [01 Data Access Guide](training-materials/phase-1-r/01-data-access-guide.md)  |
-| You previously used APM data through AURIN      | [02 Paradigm Shift](training-materials/phase-1-python/02-paradigm-shift.md)        | [02 Paradigm Shift](training-materials/phase-1-r/02-paradigm-shift.md)        |
-| You want to budget your credits before a big run| [03 Credit Calculator](training-materials/phase-1-python/03-credit-calculator.md)  | [03 Credit Calculator](training-materials/phase-1-r/03-credit-calculator.md)  |
-| You are about to write extraction code          | [04 API Gotchas](training-materials/phase-1-python/04-api-gotchas.md)              | [04 API Gotchas](training-materials/phase-1-r/04-api-gotchas.md)              |
-| You are ready for hands-on examples             | [phase-2 notebooks](training-materials/phase-2-python/)                            | [phase-2 notebooks](training-materials/phase-2-r/)                            |
+| You are brand new and want the big picture      | [00 Getting Started](training-materials/python-phase-1/00-getting-started.md)      | [00 Getting Started](training-materials/r-phase-1/00-getting-started.md)      |
+| You are setting up access for the first time    | [01 Data Access Guide](training-materials/python-phase-1/01-data-access-guide.md)  | [01 Data Access Guide](training-materials/r-phase-1/01-data-access-guide.md)  |
+| You previously used APM data through AURIN      | [02 Paradigm Shift](training-materials/python-phase-1/02-paradigm-shift.md)        | [02 Paradigm Shift](training-materials/r-phase-1/02-paradigm-shift.md)        |
+| You want to budget your credits before a big run| [03 Credit Calculator](training-materials/python-phase-1/03-credit-calculator.md)  | [03 Credit Calculator](training-materials/r-phase-1/03-credit-calculator.md)  |
+| You are about to write extraction code          | [04 API Gotchas](training-materials/python-phase-1/04-api-gotchas.md)              | [04 API Gotchas](training-materials/r-phase-1/04-api-gotchas.md)              |
+| You are ready for hands-on examples             | [phase-2 notebooks](training-materials/python-phase-2/)                            | [phase-2 notebooks](training-materials/r-phase-2/)                            |
 
 The **phase-2 notebooks** are practical, runnable examples covering the same five topics in both tracks
 (differing only in extension): a first end-to-end query, listings search, suburb statistics over time,
@@ -142,18 +142,18 @@ domain_public/
 ├── index.html                   # Redirects to the slides (for the published web version)
 ├── slides/                      # Researcher intro deck: open the .html in a browser, or the .pdf
 └── training-materials/
-    ├── phase-1-python/          # Plain-language guides: read these first
+    ├── python-phase-1/          # Plain-language guides: read these first
     │   ├── 00-getting-started.md         03-credit-calculator.md
     │   ├── 01-data-access-guide.md       04-api-gotchas.md
     │   └── 02-paradigm-shift.md
-    ├── phase-2-python/          # Hands-on Jupyter notebooks
+    ├── python-phase-2/          # Hands-on Jupyter notebooks
     │   ├── notebook-0-getting-started.ipynb    notebook-3-pagination-tricks.ipynb
     │   ├── notebook-1-listings-search.ipynb    notebook-4-spatial-querying.ipynb
     │   ├── notebook-2-suburb-statistics.ipynb
     │   └── utils.py
-    ├── phase-1-r/               # Same five guides, with R code and an R setup checklist
+    ├── r-phase-1/               # Same five guides, with R code and an R setup checklist
     │   └── ...                  #   -> 04-api-gotchas.md has one extra R gotcha (no. 8)
-    └── phase-2-r/               # Hands-on R Markdown notebooks, open in RStudio
+    └── r-phase-2/               # Hands-on R Markdown notebooks, open in RStudio
         ├── notebook-0-getting-started.Rmd
         ├── ...
         ├── utils.R              #   -> the R port of utils.py

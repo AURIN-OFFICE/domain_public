@@ -960,7 +960,7 @@ if (length(final_results) > 0) {
 
 A CSV file is a plain-text spreadsheet that Excel and other tools can
 open. Run the chunk below to save your dataset. The file will appear in
-the same folder as this notebook (`training-materials/phase-2-r/`).
+the same folder as this notebook (`training-materials/r-phase-2/`).
 
 ```{r export-csv}
 # Change the filename to something meaningful for your study
