@@ -192,7 +192,7 @@ cat("Account:     ", AURIN_USERNAME, "\n")
 second shows your AURIN email address. If the chunk stops with an error
 about `.env`, re-read Step 2 in Notebook 0 and confirm the `.env` file
 is in the main `domain_api` folder (not inside
-`training-materials/r/phase-2/`). The error message prints the folder it
+`training-materials/phase-2-r/`). The error message prints the folder it
 searched.
 
 ------------------------------------------------------------------------
@@ -604,7 +604,7 @@ cat("You can open this file in Excel or import it into Python, QGIS, or STATA.\n
 
 **An error about `.env` when loading credentials:** The `.env` file is
 missing or in the wrong location. It must be in the main `domain_api`
-folder, not inside `training-materials/r/phase-2/`. Check that the file
+folder, not inside `training-materials/phase-2-r/`. Check that the file
 name starts with a dot and has no other extension (`.env.txt` will not
 work). The error message prints the folder it searched.
 

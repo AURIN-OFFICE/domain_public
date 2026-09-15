@@ -229,14 +229,14 @@ If you have never used R before, work through this list first:
    install.packages(c("httr2", "jsonlite"))
    ```
 
-   For the phase-2 notebooks you will need a few more. Rather than typing them out, open `training-materials/r/phase-2/install-packages.R` and click **Source**, which installs the whole set in one go.
+   For the phase-2 notebooks you will need a few more. Rather than typing them out, open `training-materials/phase-2-r/install-packages.R` and click **Source**, which installs the whole set in one go.
 
 4. **Create your `.env` file** as described in Step 3 above
 
 6. **Run the verification code** in Step 4
 
 4. **Open a notebook.** In RStudio, use File, Open File and choose
-   `training-materials/r/phase-2/notebook-0-getting-started.Rmd`. Run one chunk at a time
+   `training-materials/phase-2-r/notebook-0-getting-started.Rmd`. Run one chunk at a time
    with the green arrow at its top-right corner, or click **Knit** to run the whole
    notebook and produce an HTML report.
 
