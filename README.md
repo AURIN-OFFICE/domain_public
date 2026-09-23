@@ -132,10 +132,10 @@ credits used, and converts map boundaries into the format the API expects.
 
 ```
 domain_public/
-├── api_agents_and_listings/     # GROUP 1: listings, agencies, agents, projects
+├── group_agents_and_listings/   # GROUP 1: listings, agencies, agents, projects
 │   ├── documentation.md         #   -> overview of the group and what it covers
 │   └── metadata-agents-and-listings.md       #   -> full endpoint reference
-├── api_property_data/           # GROUP 2: property records, suburb statistics, auctions
+├── group_property_data/         # GROUP 2: property records, suburb statistics, auctions
 │   ├── documentation.md         #   -> overview of the group and what it covers
 │   └── metadata-properties-and-locations.md  #   -> full endpoint reference
 ├── correspondence/              # Geography lookups: Domain suburbs -> ABS boundaries (.xlsx)
@@ -168,17 +168,17 @@ The API is split into two groups. Each has a short overview and a full endpoint 
 **Group 1, Agents & Listings**, the active market as advertised on Domain: residential, commercial and
 business listings, plus the agencies, agents and development projects behind them.
 
-- [`api_agents_and_listings/documentation.md`](api_agents_and_listings/documentation.md), what the
+- [`group_agents_and_listings/documentation.md`](group_agents_and_listings/documentation.md), what the
   group covers, how often it refreshes, and its limits.
-- [`api_agents_and_listings/metadata-agents-and-listings.md`](api_agents_and_listings/metadata-agents-and-listings.md),
+- [`group_agents_and_listings/metadata-agents-and-listings.md`](group_agents_and_listings/metadata-agents-and-listings.md),
   every endpoint with parameters, response fields and known limitations.
 
 **Group 2, Properties & Locations**, property-level records and area-level market intelligence: sales
 and listing history, price estimates, suburb performance statistics, demographics and auction results.
 
-- [`api_property_data/documentation.md`](api_property_data/documentation.md), what the group covers
+- [`group_property_data/documentation.md`](group_property_data/documentation.md), what the group covers
   and the constraints to plan around.
-- [`api_property_data/metadata-properties-and-locations.md`](api_property_data/metadata-properties-and-locations.md),
+- [`group_property_data/metadata-properties-and-locations.md`](group_property_data/metadata-properties-and-locations.md),
   every endpoint with parameters, response fields and required disclaimers.
 
 **Geography lookups.** Domain uses its own suburb, region and location IDs, which do not map directly
