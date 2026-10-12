@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "slides/domain-slides.html"
+      - "datatale/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -31,17 +32,13 @@ jobs:
 
       - name: Prepare site folder
         run: |
-          mkdir -p _site
-          cp slides/domain-slides.html _site/domain-slides.html
-          touch _site/.nojekyll
-
-      - name: Rename to index.html
-        run: mv _site/domain-slides.html _site/index.html
+          cp slides/domain-slides.html datatale/index.html
+          touch datatale/.nojekyll
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: _site
+          path: datatale
 
       - name: Deploy to GitHub Pages
         id: deployment
