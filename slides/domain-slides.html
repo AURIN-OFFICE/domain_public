@@ -187,6 +187,7 @@
   /* Breathing room under the subtitle on slides without a figure. Chart slides
      are deliberately excluded so the plot keeps its height. */
   p.lead + .two-col,
+  p.lead + .three-col,
   p.lead + .cards,
   p.lead + .timeline,
   p.lead + .yn-wrap { margin-top: clamp(10px, 2vh, 30px); }
@@ -210,10 +211,94 @@
   }
   .stat .val { font-size: var(--fs-stat); font-weight: 700; color: var(--brand); }
   .stat .lbl { font-size: var(--fs-xs); color: var(--muted); margin-top: 2px; }
+  .stats-row.big { flex-wrap: nowrap; margin: clamp(8px, 1.6vh, 22px) 0; }
+  .stats-row.big .stat { flex: 1 1 0; padding: clamp(8px, 1.4vh, 18px) clamp(12px, 1.2vw, 20px); border-top: 4px solid var(--brand); }
+  @media (max-width: 640px) { .stats-row.big { flex-wrap: wrap; } .stats-row.big .stat { flex-basis: 40%; } }
+  .cost-table td:last-child { text-align: right; white-space: nowrap; color: var(--brand); font-size: var(--fs-base); }
+  .cost-table th:last-child { text-align: right; }
+
+  /* ACCESS PERIOD BAR */
+  .period { margin: .3em 0 .6em; }
+  .period-bar { display: flex; align-items: stretch; height: clamp(30px, 4.4vh, 52px); border-radius: 8px; overflow: hidden; font-size: var(--fs-xs); font-weight: 600; }
+  .period-seg { display: flex; align-items: center; justify-content: center; color: #fff; padding: 0 .8em; }
+  .period-seg:first-child { flex: 0 0 auto; background: #0f4208; }
+  .period-seg:nth-child(2) { flex: 1 1 auto; background: var(--brand); }
+  .period-end { flex: 0 0 auto; display: flex; align-items: center; padding: 0 .9em; background: var(--accent); color: #fff; }
+  .period-rule { font-size: var(--fs-sm); margin: .5em 0 0; }
+  .two-col > div > .card + .card { margin-top: clamp(8px, 1.2vh, 16px); }
 
   /* TWO-COLUMN */
   .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(18px, 2vw, 34px); align-items: start; }
   @media (max-width: 640px) { .two-col { grid-template-columns: 1fr; } }
+
+  /* COLUMNS THAT FILL THE SLIDE HEIGHT */
+  .slide > .two-col { align-items: stretch; }
+  .yn-wrap.fill-table td:last-child { white-space: nowrap; }
+  .two-col > div.stretch { justify-content: stretch; }
+  .two-col > div.stretch > .card,
+  .two-col > div.stretch > .box,
+  .two-col > div.stretch > .metrics,
+  .two-col > div.stretch > .yn-wrap { flex: 1 1 auto; }
+  .metrics.spread li { flex: 1 1 auto; align-items: center; }
+  .metrics.spread li .dot { margin-top: 0; }
+  .card.top { align-content: start; }
+
+  /* BOX: a bordered panel with a coloured header band */
+  .box { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; background: #fff; }
+  .box > .box-head { background: var(--brand); color: #fff; padding: .55em 1em; display: flex; align-items: baseline; gap: .6em; flex-wrap: wrap; }
+  .box > .box-head h3 { margin: 0; color: #fff; font-size: var(--fs-md); }
+  .box > .box-head .tag-sm { font-size: var(--fs-xs); opacity: .8; }
+  .box.warn > .box-head { background: var(--red); }
+  .box > .box-body { padding: clamp(6px, 1vh, 14px) 1em; flex: 1 1 auto; display: flex; flex-direction: column; background: #f4f9f2; }
+  .box > .box-body > p { font-size: var(--fs-sm); color: var(--muted); margin-bottom: .3em; }
+  .box > .box-body > .metrics { flex: 1 1 auto; margin: 0; }
+  .box > .box-foot { padding: .5em 1em; font-size: var(--fs-xs); border-top: 1px solid var(--border); background: #ecf5e8; color: var(--muted); }
+  .yn-wrap.fill-table { align-items: stretch; }
+  .yn-wrap.fill-table .yn-table { height: 100%; margin-top: 0; }
+  .yn-table .why { display: block; font-size: var(--fs-xs); color: var(--muted); }
+  .metrics .note { display: block; color: var(--muted); font-size: var(--fs-xs); }
+  .metrics .pill { flex-shrink: 0; min-width: 4.6em; text-align: center; font-size: var(--fs-xs); font-weight: 700; border-radius: 20px; padding: .1em .6em; color: #fff; }
+  .pill.yes { background: var(--green); color: #fff; }
+  .pill.partial { background: var(--accent); color: #fff; }
+  .pill.no { background: var(--red); color: #fff; }
+
+  /* 2 x 2 CARD GRID */
+  .cards.grid-2 { grid-template-columns: repeat(2, 1fr); grid-auto-rows: 1fr; }
+  .cards.grid-2 .card { grid-template-areas: "icon title" "body body" "todo todo"; grid-template-rows: auto 1fr auto; align-content: stretch; }
+  .cards.grid-2 .card p:not(.todo) { align-self: start; }
+  /* every footnote reserves two lines, so the dividers line up across a row */
+  .cards.grid-2 .card p.todo { line-height: 1.45; min-height: calc(2.9em + .6em); }
+  .card p.todo { grid-area: todo; margin-top: .8em; padding-top: .6em; border-top: 1px solid var(--border); color: var(--text); }
+  .card p.todo strong { color: var(--brand); }
+  @media (max-width: 640px) { .cards.grid-2 { grid-template-columns: 1fr; grid-auto-rows: auto; } }
+
+  /* 3 x 2 CARD GRID */
+  .cards.grid-3 { grid-template-columns: repeat(3, 1fr); grid-auto-rows: 1fr; }
+  @media (max-width: 640px) { .cards.grid-3 { grid-template-columns: 1fr; grid-auto-rows: auto; } }
+
+  /* FAQ GRID */
+  .slide > .faq { flex: 1 1 auto; min-height: 0; }
+  .faq { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; gap: clamp(6px, 1vh, 14px) clamp(14px, 1.6vw, 28px); margin-top: clamp(4px, 1vh, 14px); }
+  .faq .qa { background: #f4f9f2; border-left: 4px solid var(--brand); border-radius: 0 8px 8px 0; padding: clamp(5px, .8vh, 12px) 1em; display: flex; flex-direction: column; justify-content: center; }
+  .faq h4 { font-size: var(--fs-sm); margin: 0 0 .15em; color: var(--brand); }
+  .faq p { font-size: var(--fs-xs); color: var(--muted); margin: 0; line-height: 1.35; }
+  .faq code { font-size: .92em; }
+  @media (max-width: 640px) { .faq { grid-template-columns: 1fr; grid-auto-rows: auto; } }
+
+  /* THREE-COLUMN (record types side by side) */
+  .slide > .three-col { flex: 1 1 auto; min-height: 0; }
+  .three-col { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(12px, 1.4vw, 24px); align-items: stretch; }
+  .three-col > .col {
+    background: #f4f9f2; border: 1px solid var(--border); border-radius: 8px;
+    padding: clamp(10px, 1.5vh, 20px) clamp(12px, 1.2vw, 20px);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .three-col > .col h3 { display: flex; align-items: center; gap: .4em; margin-bottom: .2em; }
+  .three-col > .col .col-sub { font-size: var(--fs-xs); color: var(--muted); margin-bottom: .3em; }
+  .three-col .metrics { margin: 0; }
+  .three-col .metrics li { padding: clamp(2px, .45vh, 7px) 0; font-size: var(--fs-xs); line-height: 1.35; }
+  .three-col > .col .col-foot { margin-top: auto; padding-top: .5em; font-size: var(--fs-xs); color: var(--accent); font-weight: 600; }
+  @media (max-width: 640px) { .three-col { grid-template-columns: 1fr; } }
 
   /* METRIC LIST */
   .metrics { list-style: none; margin: 6px 0; }
@@ -285,13 +370,14 @@
   <div class="toc">
     <a href="#s1">Intro</a>
     <a href="#s2">Data Types</a>
-    <a href="#s4">Suburb Stats</a>
-    <a href="#s5">Listings</a>
-    <a href="#s6">Charts</a>
-    <a href="#s10">Coverage</a>
-    <a href="#s12">Access</a>
-    <a href="#s13">Limits</a>
-    <a href="#s14">Publishing</a>
+    <a href="#s3">Suburb Stats</a>
+    <a href="#s4">Listings</a>
+    <a href="#s5">Charts</a>
+    <a href="#s8">Access</a>
+    <a href="#s9">Credits</a>
+    <a href="#s10">Limits</a>
+    <a href="#s11">Quality</a>
+    <a href="#s12">Publishing</a>
   </div>
 </nav>
 
@@ -310,34 +396,44 @@
 <section class="slide" id="s2">
   <div class="slide-num"></div>
   <h2>Where does this data come from, and what is in it?</h2>
-  <p class="lead">Domain.com.au is one of Australia's largest property listings websites. Agents post listings there and sale results are recorded, creating a continuously updated view of the market that researchers reach through <strong>AURIN</strong>.</p>
+  <p class="lead">Domain.com.au is one of Australia's largest property listings websites. Agents post listings there and sale results are recorded, creating a continuously updated view of the market in <strong>every Australian state and territory</strong>, which researchers reach through <strong>AURIN</strong>.</p>
 
   <div class="two-col">
-    <div>
-      <ul class="metrics">
-        <li><span class="dot"></span><span>Properties currently for sale or rent</span></li>
-        <li><span class="dot"></span><span>Properties recently sold, with price and date</span></li>
-        <li><span class="dot"></span><span>Market conditions in each suburb over time</span></li>
-      </ul>
-      <div class="callout"><strong>Not a one-time snapshot.</strong> Unlike a static dataset delivered as a file, this is a <strong>live query service</strong>. Questions are sent and answered in real time, so the data always reflects current market activity.</div>
+    <div class="stretch">
+      <div class="box">
+        <div class="box-head"><h3>&#128205; Agents &amp; Listings API</h3><span class="tag-sm">the live advertised market</span></div>
+        <div class="box-body">
+          <p>Individual listings, one record per property advertised on Domain, plus who is advertising them.</p>
+          <ul class="metrics spread">
+            <li><span class="dot"></span><span><strong>Residential listings:</strong> for sale, for rent, shared, sold, new homes</span></li>
+            <li><span class="dot"></span><span><strong>Commercial and business listings:</strong> for sale or lease</span></li>
+            <li><span class="dot"></span><span><strong>Agencies and agents</strong> behind each listing</span></li>
+            <li><span class="dot"></span><span><strong>New development projects</strong> and the units inside them</span></li>
+            <li><span class="dot"></span><span>Search by suburb and postcode, or by a polygon drawn on a map. Refreshed daily.</span></li>
+          </ul>
+        </div>
+        <div class="box-foot"><strong>Best for:</strong> fine-grained, spatial or transaction-level analysis, down to a single street.</div>
+      </div>
     </div>
-    <div>
-      <div class="cards one-col">
-        <div class="card">
-          <div class="icon">&#128202;</div>
-          <h3>Suburb-Level Summaries</h3>
-          <p>Market snapshots for each suburb: typical prices, how fast homes sell, rental demand, auction activity. Good for <strong>trends, comparisons across areas, and policy analysis</strong>.</p>
+    <div class="stretch">
+      <div class="box">
+        <div class="box-head"><h3>&#128202; Property Data API</h3><span class="tag-sm">area-level market intelligence</span></div>
+        <div class="box-body">
+          <p>Suburb-level summaries and property-level lookups, for comparing places and tracking change over time.</p>
+          <ul class="metrics spread">
+            <li><span class="dot"></span><span><strong>Suburb performance statistics:</strong> prices, sales, days on market, rents, ~10 years</span></li>
+            <li><span class="dot"></span><span><strong>Census demographics</strong> per suburb: 2011, 2016, 2021</span></li>
+            <li><span class="dot"></span><span><strong>Weekly auction results</strong> for major cities (current week only)</span></li>
+            <li><span class="dot"></span><span><strong>Property records</strong> and address lookup</span></li>
+            <li><span class="dot"></span><span><strong>Suburb profiles</strong> from Domain's location model. Statistics refreshed monthly.</span></li>
+          </ul>
         </div>
-        <div class="card">
-          <div class="icon">&#128205;</div>
-          <h3>Individual Property Records</h3>
-          <p>Details on specific homes: bedrooms, sold price, date, description, coordinates. Useful for <strong>fine-grained analysis, spatial modelling, or a single street</strong>.</p>
-        </div>
+        <div class="box-foot"><strong>Best for:</strong> trends, comparisons across suburbs and cities, and policy analysis.</div>
       </div>
     </div>
   </div>
 
-  <div class="callout"><strong>Rule of thumb:</strong> if your question is about a suburb or area, use the summaries; if it is about specific properties or transactions, use the individual listings.</div>
+  <div class="callout"><strong>Not a one-time snapshot.</strong> Both are <strong>live query services</strong>, not files to download: each question is answered in real time from Domain's current data. <strong>Rule of thumb:</strong> a question about an area &rarr; Property Data; about specific properties or transactions &rarr; Agents &amp; Listings.</div>
 </section>
 
 
@@ -346,15 +442,15 @@
 
 
 <!-- SLIDE 4: SUBURB STATS -->
-<section class="slide" id="s4">
+<section class="slide" id="s3">
   <div class="slide-num"></div>
   <h2>Suburb-Level Summaries: What's in Them?</h2>
   <p class="lead">Snapshots per suburb at quarterly, half-yearly, and annual intervals, over a rolling window of roughly the last decade. Houses and units are queried separately.</p>
 
   <div class="two-col">
-    <div>
+    <div class="stretch">
       <h3>What each period record contains</h3>
-      <ul class="metrics">
+      <ul class="metrics spread">
         <li><span class="dot"></span><span><strong>Median sold price:</strong> the middle sale price for the period</span></li>
         <li><span class="dot"></span><span><strong>Number of sales:</strong> how many properties actually sold</span></li>
         <li><span class="dot"></span><span><strong>Days on market:</strong> how long homes typically sat before selling</span></li>
@@ -365,11 +461,27 @@
         <li><span class="dot"></span><span><strong>Discount rate:</strong> how much sellers typically dropped their asking price</span></li>
       </ul>
     </div>
-    <div>
-      <div class="card" style="background:#f0fbf2; border-color:#afd5b4;">
-        <div class="icon">✅</div>
-        <h3>Best for questions like...</h3>
-        <p style="font-size:var(--fs-sm)">"How have median house prices in Fitzroy changed over the last decade?"<br><br>"Which inner-Melbourne suburbs had the fastest-selling properties last year?"<br><br>"How did COVID affect rental demand in coastal areas?"</p>
+    <div class="stretch">
+      <div class="box">
+        <div class="box-head"><h3>&#9989; Best for questions like...</h3></div>
+        <div class="box-body">
+          <ul class="metrics spread">
+            <li><span class="dot"></span><span>"How have median house prices in Fitzroy changed over the last decade?"</span></li>
+            <li><span class="dot"></span><span>"Which inner-Melbourne suburbs had the fastest-selling properties last year?"</span></li>
+            <li><span class="dot"></span><span>"How did COVID affect rental demand in coastal areas?"</span></li>
+          </ul>
+        </div>
+      </div>
+      <div class="box">
+        <div class="box-head" style="background:var(--accent)"><h3>&#128161; Good to know</h3></div>
+        <div class="box-body" style="background:#fffbf0">
+          <ul class="metrics spread">
+            <li><span class="dot" style="background:var(--accent)"></span><span><strong>Houses and units are separate queries.</strong> "House" includes townhouses, duplexes, terraces and semis; "unit" includes apartments, flats, studios and villas. Vacant land is in neither.</span></li>
+            <li><span class="dot" style="background:var(--accent)"></span><span><strong>Up to 45 periods</strong>, back to February 2015, refreshed monthly on the 25th.</span></li>
+            <li><span class="dot" style="background:var(--accent)"></span><span><strong>Quiet suburbs have gaps:</strong> Domain withholds figures for low-volume quarters.</span></li>
+            <li><span class="dot" style="background:var(--accent)"></span><span><strong>Rental yield</strong> averages per-property yields, using each property's estimated value while it was listed for rent.</span></li>
+          </ul>
+        </div>
       </div>
     </div>
   </div>
@@ -377,38 +489,56 @@
 
 
 <!-- SLIDE 5: LISTINGS -->
-<section class="slide" id="s5">
+<section class="slide" id="s4">
   <div class="slide-num"></div>
   <h2>Individual Property Records: What's in Them?</h2>
-  <p class="lead">Each record describes one property at one point in time (a sale, a rental listing, or an active for-sale listing).</p>
+  <p class="lead">Each record is one listing at one point in time, across three markets. All three carry the address, coordinates, price, advertising agency, features and photos.</p>
 
-  <div class="two-col">
-    <div>
-      <h3>What each property record contains</h3>
+  <div class="three-col">
+    <div class="col">
+      <h3>&#127968; Residential</h3>
+      <div class="col-sub">Homes for sale, for rent, shared, sold, and new homes</div>
       <ul class="metrics">
-        <li><span class="dot"></span><span><strong>Address and coordinates:</strong> exact location (lat/lon)</span></li>
-        <li><span class="dot"></span><span><strong>Property type:</strong> house, apartment, townhouse, etc.</span></li>
-        <li><span class="dot"></span><span><strong>Size:</strong> bedrooms, bathrooms, car spaces, land area</span></li>
-        <li><span class="dot"></span><span><strong>Price or rent:</strong> sold price, asking price, or rental amount</span></li>
-        <li><span class="dot"></span><span><strong>Sold date:</strong> when the transaction occurred</span></li>
-        <li><span class="dot"></span><span><strong>Sale method:</strong> auction, private treaty, or expression of interest</span></li>
-        <li><span class="dot"></span><span><strong>Agency:</strong> which real estate agency handled the sale</span></li>
-        <li><span class="dot"></span><span><strong>Features and amenities:</strong> tags declared by the advertiser (e.g. swimming pool, air conditioning, ensuite, balcony, solar panels, water views, pet-friendly) across 41 possible attributes</span></li>
+        <li><span class="dot"></span><span><strong>Type:</strong> house, apartment, townhouse, land, rural and more</span></li>
+        <li><span class="dot"></span><span><strong>Size:</strong> bedrooms, bathrooms, car spaces, land and building area</span></li>
+        <li><span class="dot"></span><span><strong>Sales:</strong> sold price and date; asking price or range</span></li>
+        <li><span class="dot"></span><span><strong>Sale outcome:</strong> auction, sold prior to auction, private treaty, withdrawn</span></li>
+        <li><span class="dot"></span><span><strong>Rentals:</strong> asking rent, bond, availability date, leased rent and date</span></li>
+        <li><span class="dot"></span><span><strong>Features:</strong> up to 41 advertiser tags (pool, air conditioning, solar panels, water views...)</span></li>
       </ul>
+      <div class="col-foot">Dense from 2018; back to ~2000 but sparse</div>
     </div>
-    <div>
-      <div class="card" style="background:#fffbf0; border-color:#f0d580;">
-        <div class="icon">⚠️</div>
-        <h3>Heads up on coverage</h3>
-        <p style="font-size:var(--fs-sm)">Individual records are <strong>densely available from 2018 onwards</strong>. Earlier years (2000-2018) exist but the data might be sparse. Do not rely on pre-2018 completeness for research that needs every transaction.</p>
-      </div>
+    <div class="col">
+      <h3>&#127970; Commercial</h3>
+      <div class="col-sub">Offices, retail, industrial and other commercial property</div>
+      <ul class="metrics">
+        <li><span class="dot"></span><span><strong>Market:</strong> for sale, for lease, sold and leased</span></li>
+        <li><span class="dot"></span><span><strong>Size:</strong> land and building area, car spaces, units offered</span></li>
+        <li><span class="dot"></span><span><strong>Price:</strong> sale or lease price, total or per m&sup2;, GST treatment</span></li>
+        <li><span class="dot"></span><span><strong>Sale type:</strong> standard sale, auction, expression of interest, tender</span></li>
+        <li><span class="dot"></span><span><strong>Investment:</strong> occupancy (tenanted or vacant), annual return %, lease terms</span></li>
+        <li><span class="dot"></span><span><strong>Energy:</strong> NABERS rating (0&ndash;6 stars) where reported</span></li>
+      </ul>
+      <div class="col-foot">Mainly current and recent activity</div>
+    </div>
+    <div class="col">
+      <h3>&#128188; Business</h3>
+      <div class="col-sub">Businesses and franchise opportunities for sale</div>
+      <ul class="metrics">
+        <li><span class="dot"></span><span><strong>Category:</strong> retail, hospitality, services, franchise and more</span></li>
+        <li><span class="dot"></span><span><strong>Price:</strong> asking price or range</span></li>
+        <li><span class="dot"></span><span><strong>Premises:</strong> leasehold details, or a link to the freehold commercial listing</span></li>
+        <li><span class="dot"></span><span><strong>Franchise:</strong> searchable by brand and franchise group</span></li>
+        <li><span class="dot"></span><span><strong>Energy:</strong> NABERS rating where reported</span></li>
+      </ul>
+      <div class="col-foot">Mainly current and recent activity</div>
     </div>
   </div>
 </section>
 
 
 <!-- SLIDE 6: CHART 1 -->
-<section class="slide" id="s6">
+<section class="slide" id="s5">
   <div class="slide-num"></div>
   <h2>Example: Price Trends Across Australian Markets</h2>
   <p class="lead">All markets indexed to Q1 2018, so they can be compared regardless of their absolute price levels. Capitals are solid, coastal lifestyle markets dashed.</p>
@@ -426,7 +556,7 @@
 
 
 <!-- SLIDE 8: CHART: DAYS ON MARKET -->
-<section class="slide" id="s8">
+<section class="slide" id="s6">
   <div class="slide-num"></div>
   <h2>Example: How Long Properties Take to Sell</h2>
   <p class="lead">"Days on market" measures how long a typical property sits before a buyer is found. A low number signals a hot market; a high number signals a buyer's market.</p>
@@ -441,7 +571,7 @@
 
 
 <!-- SLIDE 9: CHART: SALE METHOD -->
-<section class="slide" id="s9">
+<section class="slide" id="s7">
   <div class="slide-num"></div>
   <h2>Example: How Properties Are Sold</h2>
   <p class="lead">The mix of auctions vs private sales shifts with market conditions and differs sharply between suburbs.</p>
@@ -455,174 +585,229 @@
 </section>
 
 
-<!-- SLIDE 10: GEOGRAPHIC COVERAGE -->
-<section class="slide" id="s10">
-  <div class="slide-num"></div>
-  <h2>What the data covers: where, and how far back</h2>
-  <p class="lead">All Australian states and territories, across every suburb with activity on Domain's platform. How far back you can go depends on which part of the dataset you need.</p>
-
-  <div class="two-col">
-    <div>
-      <div class="cards one-col">
-        <div class="card">
-          <div class="icon">&#128506;&#65039;</div>
-          <h3>All suburbs covered</h3>
-          <p>Query by suburb name and postcode. Cities, regional centres and most rural areas with listing activity are included; coverage thins in very remote areas.</p>
-        </div>
-        <div class="card">
-          <div class="icon">&#128208;</div>
-          <h3>ABS area mapping</h3>
-          <p>Domain uses suburb names and postcodes, not ABS statistical areas (SA2, SA3, SA4). Correspondence files convert between the two, but it is an extra step.</p>
-        </div>
-        <div class="card">
-          <div class="icon">&#128205;</div>
-          <h3>Spatial queries</h3>
-          <p>You can draw a polygon on a map and retrieve the listings inside it. Useful for corridor studies, catchments and irregular boundaries, but any single query returns at most 1,000 records and truncates silently beyond that.</p>
-        </div>
-      </div>
-    </div>
-    <div>
-      <div class="timeline">
-        <div class="tl-row">
-          <div class="tl-year">Rolling ~10 yrs</div>
-          <div>
-            <strong>Suburb summaries</strong>
-            <div class="tl-detail">Quarterly, half-yearly and annual statistics on a rolling window, capped at 45 periods and starting February 2015. Longer intervals do not reach further back. The most complete series, though Domain suppresses low-volume suburb quarters.</div>
-          </div>
-        </div>
-        <div class="tl-row">
-          <div class="tl-year">2018 onward</div>
-          <div>
-            <strong>Individual listings (reliable)</strong>
-            <div class="tl-detail">Densely covered from 2018, and suitable for transaction-level research from that point.</div>
-          </div>
-        </div>
-        <div class="tl-row">
-          <div class="tl-year">2000-2018</div>
-          <div>
-            <strong>Individual listings (sparse)</strong>
-            <div class="tl-detail">Records exist but many are missing. Not reliable where complete market coverage is required.</div>
-          </div>
-        </div>
-        <div class="tl-row">
-          <div class="tl-year">2011, 2016, 2021</div>
-          <div>
-            <strong>Demographics</strong>
-            <div class="tl-detail">Suburb-level Census profiles, available for Census years only.</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-
-<!-- SLIDE 11: TEMPORAL COVERAGE -->
 
 
 
 <!-- SLIDE 12: ACCESS MODEL -->
-<section class="slide" id="s12">
+<section class="slide" id="s8">
   <div class="slide-num"></div>
   <h2>How does access work?</h2>
   <p class="lead">Access is managed by AURIN and is available to approved researchers at Australian universities and research organisations.</p>
 
   <div class="two-col">
     <div>
-      <div class="stats-row">
-        <div class="stat"><div class="val">5,000</div><div class="lbl">API credits per month</div></div>
-        <div class="stat"><div class="val">1</div><div class="lbl">credit per query</div></div>
-        <div class="stat"><div class="val">1st</div><div class="lbl">of each month, resets</div></div>
+      <h3>&#128272; Getting access, step by step</h3>
+      <div class="timeline">
+        <div class="tl-row">
+          <div class="tl-year">1. Approval</div>
+          <div class="tl-detail">Through a breakthrough opportunity, or a relevant activity under your Node AAP.</div>
+        </div>
+        <div class="tl-row">
+          <div class="tl-year">2. Agreement</div>
+          <div class="tl-detail">Sign the AURIN data transfer agreement (DTA). <strong>Your access period starts on the day you sign.</strong></div>
+        </div>
+        <div class="tl-row">
+          <div class="tl-year">3. Credentials</div>
+          <div class="tl-detail">Collect your AURIN Data Provider username and password. There is no separate API key to generate.</div>
+        </div>
+        <div class="tl-row">
+          <div class="tl-year">4. First query</div>
+          <div class="tl-detail">Follow the Getting Started guide in the training materials (Python or R) and run one test call.</div>
+        </div>
       </div>
-
-      <h3 style="margin-top:8px">How a query works</h3>
-      <ul class="metrics">
-        <li><span class="dot"></span><span>You translate a specific question (e.g., give me suburb statistics for Fitzroy, 2020-2024) to an API query.</span></li>
-        <li><span class="dot"></span><span>The system returns the data instantly and deducts from your credit balance. <strong>Every call costs one credit, including one that returns nothing</strong>, so a typo in a suburb name is charged like any other query.</span></li>
-      </ul>
+      <div class="callout"><strong>Every call costs one credit.</strong> 5,000 credits per researcher per month: see the next slide for how to plan them.</div>
     </div>
     <div>
-      <div class="callout">
-        <strong>Credits are a finite monthly resource.</strong> Scoping queries around a defined research question ensures the allowance goes toward the data the study actually needs, rather than broad exploratory calls.
+      <h3>&#128197; How long you have access</h3>
+      <div class="period">
+        <div class="period-bar">
+          <div class="period-seg on"><span>DTA signed</span></div>
+          <div class="period-seg on"><span>6 months of access</span></div>
+          <div class="period-end"><span>Ends</span></div>
+        </div>
+        <p class="period-rule"><strong>6 months from signing the DTA</strong>, or <strong>April 2027</strong>, whichever comes first.</p>
       </div>
-      <div class="card" style="margin-top:14px;">
-        <div class="icon">🔐</div>
-        <h3>Getting access</h3>
-        <p style="font-size:var(--fs-sm)">Approval through a breakthrough opportunity (or a relevant activity under your Node AAP), signing the AURIN data transfer agreement, then collecting your credentials. A full setup guide is available in the training materials.</p>
+      <div class="card" style="background:#fffbf0; border-color:#f0d580;">
+        <div class="icon">&#9203;</div>
+        <h3>April 2027 is a hard cutoff</h3>
+        <p>That is when the agreement between AURIN and Domain ends. Anyone signing from November 2026 onwards gets <strong>less than six months</strong>, and the closer to April you sign, the shorter your window.</p>
+      </div>
+      <div class="card">
+        <div class="icon">&#127919;</div>
+        <h3>Plan your collection early</h3>
+        <p>Scope the queries your study needs before you sign, then collect and cache the data within your window. Access does not carry over once it ends.</p>
       </div>
     </div>
   </div>
+</section>
+
+
+<!-- SLIDE: CREDITS -->
+<section class="slide" id="s9">
+  <div class="slide-num"></div>
+  <h2>Planning your credits</h2>
+  <p class="lead">Every call to the API costs one credit, whatever comes back. The allowance is generous for a focused project, but it is easy to spend on mistakes.</p>
+
+  <div class="stats-row big">
+    <div class="stat"><div class="val">5,000</div><div class="lbl">credits per researcher, per month</div></div>
+    <div class="stat"><div class="val">1</div><div class="lbl">credit per call, even if it returns nothing</div></div>
+    <div class="stat"><div class="val">1st</div><div class="lbl">of each month, the balance resets</div></div>
+    <div class="stat"><div class="val">+</div><div class="lbl">need more? Ask AURIN, approved case by case</div></div>
+  </div>
+
+  <div class="two-col">
+    <div class="stretch">
+    <div class="yn-wrap fill-table">
+      <table class="yn-table cost-table">
+        <thead><tr><th>What it costs</th><th>Credits</th></tr></thead>
+        <tbody>
+          <tr><td>~10 years of quarterly statistics for one suburb (houses <em>or</em> units)</td><td><strong>1</strong></td></tr>
+          <tr><td>The same suburb, houses <em>and</em> units</td><td><strong>2</strong></td></tr>
+          <tr><td>A call with a typo, a wrong state, or an empty result</td><td><strong>1</strong></td></tr>
+          <tr><td>One year of sold listings across Greater Melbourne</td><td><strong>~900</strong></td></tr>
+          <tr><td>Greater Perth, ~9 years (2018 to 2026): statistics, ~300,000 sales, and ~160,000 rentals from the 3 busiest agencies per postcode</td><td><strong>~6,100</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+    </div>
+    <div class="stretch">
+      <h3>Four habits that save credits</h3>
+      <ul class="metrics spread">
+        <li><span class="dot"></span><span><strong>Probe first:</strong> ask for one record to see how big a query is before running it in full.</span></li>
+        <li><span class="dot"></span><span><strong>Ask for the full history:</strong> 45 periods of suburb statistics cost the same as 4, so filter locally.</span></li>
+        <li><span class="dot"></span><span><strong>One polygon, not many suburbs:</strong> a single map area over your study region replaces one query per suburb.</span></li>
+        <li><span class="dot"></span><span><strong>Save every response:</strong> re-running cached data is free; re-querying is not.</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout"><strong>Running out mid-collection fails silently.</strong> The API simply stops returning data, and nothing in your output shows which suburbs were never reached. Check your balance in the AURIN dashboard (Manage Access &rarr; API Access) before any large run.</div>
 </section>
 
 
 <!-- SLIDE 13: LIMITATIONS -->
-<section class="slide" id="s13">
+<section class="slide" id="s10">
   <div class="slide-num"></div>
   <h2>What this data can and cannot do</h2>
   <p class="lead">A quick reference to check before designing a study around this source.</p>
 
-  <div class="yn-wrap">
-    <table class="yn-table">
-      <thead>
-        <tr><th>Research need</th><th>Covered?</th></tr>
-      </thead>
-      <tbody>
-        <tr><td>Suburb-level price trends over the last decade</td><td><span class="yes">Yes</span></td></tr>
-        <tr><td>Individual sold property records from 2018 onwards</td><td><span class="yes">Yes</span></td></tr>
-        <tr><td>Current rental listings (live snapshot on the query day)</td><td><span class="yes">Yes</span></td></tr>
-        <tr><td>Historical rental listings</td><td><span class="no">No (the search endpoint is live only)</span></td></tr>
-        <tr><td>Days on market, auction rates, sale method</td><td><span class="yes">Yes</span></td></tr>
-        <tr><td>Suburb demographics (Census years)</td><td><span class="yes">Yes</span></td></tr>
-        <tr><td>Suburb statistics older than the rolling window</td><td><span class="no">No (nothing before Feb 2015)</span></td></tr>
-        <tr><td>Complete listing records before 2018</td><td><span class="no">No (very sparse)</span></td></tr>
-        <tr><td>Bulk download of all records for a state</td><td><span class="no">No (query by query only)</span></td></tr>
-        <tr><td>SA2 / SA3 / SA4 aggregations out of the box</td><td><span class="partial">Partial (requires a mapping step)</span></td></tr>
-        <tr><td>Original asking price after a property has sold</td><td><span class="no">No (overwritten on sale)</span></td></tr>
-        <tr><td>Properties not listed on Domain.com.au</td><td><span class="no">No (Domain-only market view)</span></td></tr>
-      </tbody>
-    </table>
+  <div class="two-col">
+    <div class="stretch">
+      <div class="box">
+        <div class="box-head"><h3>&#10004;&#65039; What you can get</h3></div>
+        <div class="box-body">
+          <ul class="metrics spread">
+            <li><span class="pill yes">Yes</span><span><strong>Suburb-level price trends, last ~10 years</strong><span class="note">Quarterly, half-yearly and annual</span></span></li>
+            <li><span class="pill yes">Yes</span><span><strong>Individual sold property records from 2018</strong><span class="note">Densely covered from that point</span></span></li>
+            <li><span class="pill yes">Yes</span><span><strong>Current rental listings</strong><span class="note">A live snapshot of what is advertised on the query day</span></span></li>
+            <li><span class="pill yes">Yes</span><span><strong>Days on market, auction rates, sale method</strong><span class="note">Per suburb and period</span></span></li>
+            <li><span class="pill yes">Yes</span><span><strong>Suburb demographics</strong><span class="note">Census years only: 2011, 2016, 2021</span></span></li>
+            <li><span class="pill partial">Partial</span><span><strong>Listing records before 2018</strong><span class="note">Available back to ~2000, but very sparse</span></span></li>
+            <li><span class="pill partial">Partial</span><span><strong>SA2 / SA3 / SA4 figures</strong><span class="note">Needs a mapping step with the correspondence files</span></span></li>
+            <li><span class="pill partial">Partial</span><span><strong>Historical rental listings</strong><span class="note">Only through the archives of agencies still trading, about 15-20% of an area's 2018 rentals, rising to about 40% today</span></span></li>
+            <li><span class="pill partial">Partial</span><span><strong>Energy efficiency ratings</strong><span class="note">ACT listings only, on each listing's own record, 1 credit per listing</span></span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="stretch">
+      <div class="box warn">
+        <div class="box-head"><h3>&#10060; What you cannot get</h3></div>
+        <div class="box-body" style="background:#fdf3f2">
+          <ul class="metrics spread">
+            <li><span class="pill no">No</span><span><strong>A complete rental history</strong><span class="note">Search is live only, and closed agencies cannot be found</span></span></li>
+            <li><span class="pill no">No</span><span><strong>Suburb statistics before February 2015</strong><span class="note">Outside the rolling window</span></span></li>
+            <li><span class="pill no">No</span><span><strong>Bulk download of all records for a state</strong><span class="note">Query by query, and at most 1,000 records per query: larger result sets are cut off without warning</span></span></li>
+            <li><span class="pill no">No</span><span><strong>Original asking price after a property sells</strong><span class="note">Overwritten on sale</span></span></li>
+            <li><span class="pill no">No</span><span><strong>A complete record of all sales</strong><span class="note">Only properties advertised on Domain.com.au: a market view, not an administrative record</span></span></li>
+            <li><span class="pill no">No</span><span><strong>Vacancy rates</strong><span class="note">Active listings measure availability, not vacancy</span></span></li>
+            <li><span class="pill no">No</span><span><strong>Achieved rents for every rental</strong><span class="note">Leased rent is recorded on about half of historical rental records; live listings show asking rent only</span></span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
   </div>
 
 </section>
 
 
-<section class="slide" id="s14">
+<!-- SLIDE: DATA QUALITY -->
+<section class="slide" id="s11">
+  <div class="slide-num"></div>
+  <h2>Data quality: what to watch for</h2>
+  <p class="lead">None of these are bugs, but each will distort an analysis if nobody accounts for it. Check them before you trust a median.</p>
+
+  <div class="cards grid-2">
+    <div class="card">
+      <div class="icon">&#128584;</div>
+      <h3>More prices withheld lately</h3>
+      <p>Recent sales are more often missing a disclosed price, and a disappointing result is the more likely to be held back, so recent-quarter medians rest on an incomplete and probably biased subset.</p>
+      <p class="todo"><strong>What to do:</strong> treat the latest quarters as provisional, and report how many sales had no price.</p>
+    </div>
+    <div class="card">
+      <div class="icon">&#128205;</div>
+      <h3>Missing prices are uneven</h3>
+      <p>About 2% of sold listings carry no price overall, but in one suburb it reached almost 30%.</p>
+      <p class="todo"><strong>What to do:</strong> check the missing-price share per area before comparing areas.</p>
+    </div>
+    <div class="card">
+      <div class="icon">&#127970;</div>
+      <h3>Filter out commercial records</h3>
+      <p>Left in, commercial listings moved one dataset's median weekly rent from <strong>$525 to $950</strong>.</p>
+      <p class="todo"><strong>What to do:</strong> filter by property type explicitly before computing residential medians.</p>
+    </div>
+    <div class="card">
+      <div class="icon">&#129517;</div>
+      <h3>Locations are not always right</h3>
+      <p>Domain's suburb and postcode fields are occasionally wrong, and ~2% of records have no coordinates.</p>
+      <p class="todo"><strong>What to do:</strong> validate locations spatially, and aggregate by postcode rather than exact position.</p>
+    </div>
+  </div>
+
+  <div class="callout"><strong>Outliers are real.</strong> A live snapshot held a one-bedroom at $32 a week and a townhouse at $7,800 a week. Flag them in your quality checks rather than deleting them silently.</div>
+</section>
+
+
+<section class="slide" id="s12">
   <div class="slide-num"></div>
   <h2>What you can publish is a separate question</h2>
   <p class="lead">Everything above is about what you can <em>retrieve</em>. Domain treats internal analysis and published output as two different stages, and the second one carries restrictions.</p>
 
   <div class="two-col">
-    <div>
-      <div class="cards one-col">
+    <div class="stretch">
         <div class="card">
           <div class="icon">&#128218;</div>
           <h3>Stage one: internal research</h3>
-          <p>Use the data freely to develop hypotheses, analyse, identify trends and inform your work. Nothing below constrains this.</p>
+          <p>Use the data freely to develop hypotheses, analyse, identify trends and inform your work. Nothing on the right constrains this.</p>
         </div>
         <div class="card" style="background:#fffbf0; border-color:#f0d580;">
           <div class="icon">&#9888;&#65039;</div>
           <h3>Stage two: anything public</h3>
           <p>Publishing, distributing or commercialising findings outside your internal environment <strong>needs Domain's review and approval</strong>. There is no definitive list of what will pass, so raise the use case early rather than at submission.</p>
         </div>
-      </div>
+        <div class="card">
+          <div class="icon">&#128221;</div>
+          <h3>Which agreement are you under?</h3>
+          <p>The <strong>API agreement</strong> covers applied research, academic publication and internal non-commercial proofs of concept. The <strong>sample data agreement</strong>, for the static sample datasets, is <strong>internal evaluation only</strong> and excludes research and publication outright.</p>
+        </div>
     </div>
-    <div>
-      <div class="yn-wrap">
+    <div class="stretch">
+      <div class="yn-wrap fill-table">
         <table class="yn-table">
           <thead>
             <tr><th>In a published output</th><th>Typically</th></tr>
           </thead>
           <tbody>
-            <tr><td>Listing descriptions</td><td><span class="no">Not allowed</span></td></tr>
-            <tr><td>Property images</td><td><span class="partial">One hero image</span></td></tr>
-            <tr><td>Agent names and phone numbers</td><td><span class="no">Not allowed</span></td></tr>
-            <tr><td>A property's full listing history</td><td><span class="partial">Latest sale only</span></td></tr>
-            <tr><td>Anything supporting direct marketing</td><td><span class="no">Not allowed</span></td></tr>
-            <tr><td>Aggregates and area-level findings</td><td><span class="yes">Unrestricted</span></td></tr>
+            <tr><td>Listing descriptions<span class="why">Third-party copyright</span></td><td><span class="no">Not allowed</span></td></tr>
+            <tr><td>Property images<span class="why">Copyright and licensing</span></td><td><span class="partial">One hero image</span></td></tr>
+            <tr><td>Agent names and phone numbers<span class="why">Privacy</span></td><td><span class="no">Not allowed</span></td></tr>
+            <tr><td>A property's full listing history<span class="why">Licensing and commercial sensitivity</span></td><td><span class="partial">Latest sale only</span></td></tr>
+            <tr><td>Anything supporting direct marketing<span class="why">Privacy and terms of use</span></td><td><span class="no">Not allowed</span></td></tr>
+            <tr><td>Individual records: addresses, exact coordinates, a property's price<span class="why">Unit-level data, even when drawn as a map</span></td><td><span class="no">Restricted</span></td></tr>
+            <tr><td>Aggregates, medians, distributions, area-level findings<span class="why">No individual property identifiable</span></td><td><span class="yes">Unrestricted</span></td></tr>
           </tbody>
         </table>
       </div>
-      <p style="font-size:var(--fs-sm); margin-top:1em; opacity:.8;">Which agreement you are under also matters. The <strong>API agreement</strong> covers applied research, academic publication and internal non-commercial proofs of concept. The <strong>sample data agreement</strong>, which governs the static sample datasets, is <strong>internal evaluation only</strong> and excludes research and publication outright.</p>
     </div>
   </div>
 
@@ -631,7 +816,7 @@
 
 
 <!-- FOOTER -->
-<section class="slide-footer">
+<section class="slide-footer" id="s13">
   <h2>Questions?</h2>
   <p>Training materials, worked examples, and a credit cost calculator are available in the accompanying guides and Jupyter notebooks. Start with the Getting Started guide.</p>
   <div style="margin-top:2em; font-size:var(--fs-base); opacity:.55; letter-spacing:.04em;">Domain API · Accessed via AURIN · Data from Domain.com.au</div>
